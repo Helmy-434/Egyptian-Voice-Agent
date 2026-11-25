@@ -218,3 +218,49 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.Python
+.venv/
+venv/
+ENV/
+
+# Testing & linting
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+
+# Secrets & local config
+.env
+.env.*
+!.env.example
+
+# Runtime logs & audio artifacts
+logs/*.jsonl
+logs/*.log
+scripts/eval_clips/*.wav
+scripts/eval_clips/*.mp3
+scripts/eval_clips/*.flac
+
+# Model checkpoints & cache
+models/
+checkpoints/
+*.pt
+*.pth
+*.onnx
+*.bin
+*.safetensors
+
+# OS & IDEs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
