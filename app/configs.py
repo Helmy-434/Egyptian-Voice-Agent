@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     max_session_duration_sec: int = 600
 
     # --- LLM Configuration ---
-    llm_provider: Literal["groq", "openai"] = "groq"
+    llm_provider: Literal["groq", "openai", "openrouter"] = "openrouter"
     llm_base_url: Optional[str] = None
     llm_model: str = "llama-3.3-70b-versatile"
     llm_max_output_tokens: int = 180
