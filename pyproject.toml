@@ -1,16 +1,21 @@
 [project]
 name = "egyptian-voice-agent"
 version = "0.1.0"
+description = "Egyptian Arabic Voice Agent"
 readme = "README.md"
 requires-python = ">=3.14"
+
 dependencies = [
-    "app>=0.0.1",
     "pydantic>=2.7.0",
     "pydantic-settings>=2.2.0",
+]
+
+[dependency-groups]
+dev = [
     "pytest>=9.2.0",
 ]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
-pythonpath = [".", "app"]
+pythonpath = ["."]
 addopts = "-v"
