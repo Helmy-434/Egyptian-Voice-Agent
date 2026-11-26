@@ -267,3 +267,5 @@ Thumbs.db
 
 AGENTS.md
 QwenCleo
+scripts/eval_outputs/batch_manifest.json
+scripts/eval_outputs/results.json
