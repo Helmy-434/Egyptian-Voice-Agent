@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # --- Runtime Mode & Providers ---
     agent_backend: Literal["stub", "graph"] = "stub"
     stt_provider: Literal["qwencleo", "cloud"] = "qwencleo"
-    stt_cloud_provider: Literal["groq", "azure"] = "groq"
+    stt_cloud_provider: Literal["gemini"] = "gemini"
     tts_provider: Literal["voicetut", "cloud"] = "voicetut"
     tts_cloud_provider: Literal["azure", "edge"] = "edge"
 
@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr = SecretStr("")
     azure_speech_key: SecretStr = SecretStr("")
     azure_speech_region: str = "eastus"
+    gemini_api_key: SecretStr = SecretStr("")
 
     # --- Email (SMTP) & Telegram ---
     smtp_host: str = "smtp.gmail.com"
@@ -84,11 +85,24 @@ class Settings(BaseSettings):
     max_user_sends_per_session: int = 3
     audit_log_path: str = "logs/audit.jsonl"
     latency_log_path: str = "logs/latency.jsonl"
+    
+    # --- Local STT Tuning ---
+    qwencleo_model_path: str = "QwenCleo/models/qwencleo-asr-q8_0.gguf"
+    qwencleo_server_path: str = "QwenCleo/runtime/audiocpp_server.exe"
+    qwencleo_server_port: int = Field(default=18761, ge=1, le=65535)
+    qwencleo_server_startup_timeout_sec: float = Field(default=120.0, gt=0)
+    qwencleo_allow_cpu: bool = False
+    qwencleo_warmup_clip_path: str = ""
+    stt_timeout_sec: float = 1.2                # Base timeout; calibrate just above measured p95
+    stt_timeout_per_audio_sec: float = 0.15     # Extra allowance per second of speech
+    gemini_stt_model: str = "gemini-3.5-transcribe"
+    stt_cloud_timeout_sec: float = 15.0
 
     @field_validator(
         "groq_api_key",
         "openai_api_key",
         "azure_speech_key",
+        "gemini_api_key",
         "gmail_app_password",
         "telegram_bot_token",
         "gmail_sender",
@@ -170,10 +184,8 @@ class Settings(BaseSettings):
                 raise ValueError("OPENAI_API_KEY is required when agent_backend='graph' and llm_provider='openai'")
 
         if self.stt_provider == "cloud":
-            if self.stt_cloud_provider == "groq" and not groq_key:
-                raise ValueError("GROQ_API_KEY is required for cloud Groq STT")
-            if self.stt_cloud_provider == "azure" and not azure_key:
-                raise ValueError("AZURE_SPEECH_KEY is required for cloud Azure STT")
+            if self.stt_cloud_provider == "gemini" and not self.gemini_api_key.get_secret_value():
+                raise ValueError("GEMINI_API_KEY is required for cloud Gemini STT")
 
         if self.tts_provider == "cloud" and self.tts_cloud_provider == "azure" and not azure_key:
             raise ValueError("AZURE_SPEECH_KEY is required for cloud Azure TTS")

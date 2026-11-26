@@ -4,7 +4,22 @@ Real-time Egyptian Arabic and Modern Standard Arabic (MSA) customer service voic
 
 ## Evaluation vs. Hosting Setup
 * **Latency Evaluation (`< 3s` target):** Measured locally on GPU using `QwenCleo-ASR` and `VoiceTut-TTS`.
-* **Hosted Demo:** Runs via a lightweight CPU Docker image (`requirements.txt`) backed by cloud STT/TTS providers with `DRY_RUN=true`.
+* **Hosted Demo:** Runs via a lightweight CPU Docker image (`requirements.txt`) with Gemini cloud STT and `DRY_RUN=true`.
+
+For hosted STT, set `STT_PROVIDER=cloud` and provide `GEMINI_API_KEY`. The
+Gemini provider defaults to `gemini-3.5-transcribe`; adjust
+`GEMINI_STT_MODEL` or `STT_CLOUD_TIMEOUT_SEC` if needed.
+
+## Local QwenCleo Setup
+
+The local `qwencleo` provider uses the existing GGUF model and
+`QwenCleo/runtime/audiocpp_server.exe`; it does not download Hugging Face model
+weights. Ensure both files exist at the paths configured by
+`QWENCLEO_MODEL_PATH` and `QWENCLEO_SERVER_PATH` (their defaults point to the
+repository's `QwenCleo` directory), then set `STT_PROVIDER=qwencleo`. At app
+startup, the driver starts the server and loads the model once; it stops the
+server during app shutdown. CUDA is used by default. Set
+`QWENCLEO_ALLOW_CPU=true` to explicitly use the CPU backend.
 
 ## Project Structure
 
@@ -13,7 +28,7 @@ arabic-voice-agent/
 ├── .gitignore
 ├── .env.example
 ├── requirements.txt
-├── requirements-gpu.txt         # Local GPU dependencies (torch, qwen-asr, voicetut, silero-vad)
+├── requirements-gpu.txt         # Local GPU dependencies (voicetut, silero-vad)
 ├── Dockerfile
 ├── docker-compose.yml
 ├── README.md
@@ -35,7 +50,7 @@ arabic-voice-agent/
 │   │   ├── stt/
 │   │   │   ├── base.py          # STTEngine protocol
 │   │   │   ├── qwencleo.py      # Local GPU ASR driver (QwenCleo-ASR)
-│   │   │   └── cloud.py         # Cloud ASR driver (Groq Whisper / Azure)
+│   │   │   └── cloud.py         # Cloud ASR driver (Gemini)
 │   │   └── tts/
 │   │       ├── base.py          # TTSEngine protocol (male / female voice selection)
 │   │       ├── voicetut.py      # Local GPU TTS driver (VoiceTut-TTS)
