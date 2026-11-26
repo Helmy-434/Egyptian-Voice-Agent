@@ -10,6 +10,11 @@ dependencies = [
     "pydantic-settings>=2.2.0",
 ]
 
+authors = [
+    {name = "Abdelrahman Gaber", email = "abdelrahman.gaber.hamdy@gmail.com"},
+    {name = "Yousef Helmy", email = "youssefhelmy1113@gmail.com"}
+]
+
 [dependency-groups]
 dev = [
     "pytest>=9.2.0",
