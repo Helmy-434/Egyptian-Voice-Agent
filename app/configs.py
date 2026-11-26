@@ -12,8 +12,14 @@ from app.contracts import MAX_SPEAKABLE_CHARS
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
+PROJECT_ROOT = Path(__name__).resolve().parents[1]
+
+ENV_FILE_PATH = PROJECT_ROOT + ".env"
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    
+    model_config = SettingsConfigDict(env_file=ENV_FILE_PATH, extra="ignore")
 
     # --- Runtime Mode & Providers ---
     agent_backend: Literal["stub", "graph"] = "stub"
