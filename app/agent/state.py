@@ -163,3 +163,40 @@ def get_session(session_id : str)-> SessionState | None :
             return None
         
         return session.model_copy(deep=True)
+    
+
+def add_message(session_id : str , content : str , role : str)-> Message : 
+    """
+    Args:
+        session_id (str).
+        content (str).
+        role (str).
+
+    Returns:
+        Message.
+
+    Raises:
+        ValueError.
+        KeyError.
+    """
+    
+    if not content.strip() :
+        raise ValueError("Message Content can't be empty")
+    
+    new_message = Message(
+        role=role,
+        content=content
+    )
+    
+    with _lock : 
+        
+        session = _sessions.get(session_id)
+        
+        if session is None : 
+            raise KeyError("Session Not Found")
+        
+        session.messages.append(new_message)
+        session.updated_at = datatime.now(timezone.utc)
+        
+
+    return new_message.model_copy(deep=True)
