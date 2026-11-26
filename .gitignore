@@ -264,3 +264,6 @@ checkpoints/
 Thumbs.db
 .vscode/
 .idea/
+
+AGENTS.md
+QwenCleo
