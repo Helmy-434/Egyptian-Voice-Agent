@@ -1,5 +1,6 @@
 from functools import lru_cache
 import json
+from pathlib import Path
 import re
 from typing import Annotated, Literal, Optional
 from urllib.parse import urlparse
@@ -12,9 +13,8 @@ from app.contracts import MAX_SPEAKABLE_CHARS
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-PROJECT_ROOT = Path(__name__).resolve().parents[1]
-
-ENV_FILE_PATH = PROJECT_ROOT + ".env"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+ENV_FILE_PATH = PROJECT_ROOT / ".env"
 
 
 class Settings(BaseSettings):
