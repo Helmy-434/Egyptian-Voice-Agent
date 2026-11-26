@@ -12,8 +12,14 @@ from app.contracts import MAX_SPEAKABLE_CHARS
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
+PROJECT_ROOT = Path(__name__).resolve().parents[1]
+
+ENV_FILE_PATH = PROJECT_ROOT + ".env"
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    
+    model_config = SettingsConfigDict(env_file=ENV_FILE_PATH, extra="ignore")
 
     # --- Runtime Mode & Providers ---
     agent_backend: Literal["stub", "graph"] = "stub"
@@ -37,7 +43,7 @@ class Settings(BaseSettings):
     max_session_duration_sec: int = 600
 
     # --- LLM Configuration ---
-    llm_provider: Literal["groq", "openai"] = "groq"
+    llm_provider: Literal["groq", "openai", "openrouter"] = "openrouter"
     llm_base_url: Optional[str] = None
     llm_model: str = "llama-3.3-70b-versatile"
     llm_max_output_tokens: int = 180
