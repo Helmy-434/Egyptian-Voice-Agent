@@ -200,3 +200,28 @@ def add_message(session_id : str , content : str , role : str)-> Message :
         
 
     return new_message.model_copy(deep=True)
+
+
+def get_messages(session_id : str)-> list[Message] :
+    """
+    Args:
+        session_id (str).
+
+    Returns:
+        list[Message].
+
+    Raises:
+        KeyError.
+    """
+    
+    if session_id is None : 
+        raise KeyError("Sessions ID not exist")
+    
+    
+    with _lock :
+        
+        session = _sessions.get(session_id)
+        
+        messages = sessions.messages
+        
+        return messages.model_copy(deep=True)
