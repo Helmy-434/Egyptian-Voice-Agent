@@ -3,6 +3,8 @@ from datetime import datetime , timezone
 from enum import StrEnum
 from uuid import uuid4
 from typing import Optional
+from threading import RLock
+
 
 
 class ActionStatus(StrEnum):
@@ -106,3 +108,39 @@ class SessionState(BaseModel):
     updated_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
     )
+    
+    
+    
+_sessions : [str , SessionState] = {}
+_lock = RLock
+
+
+def create_sessoin(session_id : str , user_email : str | None) -> SessionState :
+    """
+    Args:
+        session_id (str): identify the session.
+        user_email (str | None): user email in initilization if given.
+
+    Returns:
+        SessionState: session model.
+
+    Raises:
+        ValueError: Issue in value of session id ( empty or exist , unvalid).
+    """
+    
+    if not session_id.strip():
+        raise ValueError("Session ID can't be empty")
+    
+    with _lock : 
+        
+        if session_id in _sessions :
+            raise ValueError(f"Session already Exist {session_id}")
+        
+        new_session = SessionState(
+            session_id=session_id,
+            user_email=user_email
+        )
+        
+        _sessions[session_id] = new_session
+        
+        return new_session.model_copy(deep=True)
