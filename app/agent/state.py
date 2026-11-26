@@ -144,3 +144,22 @@ def create_sessoin(session_id : str , user_email : str | None) -> SessionState :
         _sessions[session_id] = new_session
         
         return new_session.model_copy(deep=True)
+    
+    
+def get_session(session_id : str)-> SessionState | None : 
+    """
+    Args:
+        session_id (str): identify the session.
+
+    Returns:
+        SessionState | None: session model.
+    """
+    
+    with _lock : 
+        
+        session = _sessions.get(session_id)
+        
+        if session is None : 
+            return None
+        
+        return session.model_copy(deep=True)
