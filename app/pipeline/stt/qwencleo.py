@@ -13,7 +13,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 import wave
 
-from app.config import Settings
+from app.configs import Settings
 from app.pipeline.stt.base import STTError, STTResult, SampleRate
 
 logger = logging.getLogger(__name__)

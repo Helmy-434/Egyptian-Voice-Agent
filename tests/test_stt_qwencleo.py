@@ -13,13 +13,8 @@ import wave
 import pytest
 from pytest import MonkeyPatch
 
-<<<<<<< Updated upstream
-from app.config import Settings
-from app.pipeline.stt.base import STTResult
-=======
 from app.configs import Settings
-from app.pipeline.stt.base import STTError, STTResult
->>>>>>> Stashed changes
+from app.pipeline.stt.base import STTResult
 from app.pipeline.stt.qwencleo import QwenCleoSTT
 
 

@@ -2,7 +2,7 @@ import asyncio
 import re
 
 from app.agent.stub import close_session, stream_agent_turn
-from app.config import get_settings
+from app.configs import get_settings
 from app.contracts import (
     AgentChunk,
     AgentRequest,
