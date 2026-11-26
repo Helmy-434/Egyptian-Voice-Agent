@@ -17,6 +17,18 @@ class ActionStatus(StrEnum):
     
 
 class PendingAction(BaseModel):
+    """
+    Attributes:
+        action_id (str).
+        tool (str): which tool model call ( email , telegram ).
+        recipient (str): reciever of message.
+        subject (str): title of message.
+        content (str): message content.
+        summary (str).
+        confirmed (bool): flag for message status.
+        status (ActionStatus): 6 status.
+        created_at (datetime): timestamp.
+    """
     
     model_config = ConfigDict(extra="forbid")
     
@@ -38,34 +50,52 @@ class PendingAction(BaseModel):
 
 
 class Message(BaseModel):
-
+    """
+    Attributes:
+        role (str): who sent message.
+        content (str): message content.
+        timestamp (datetime): current time of sending message.
+    """
+    
     model_config = ConfigDict(extra="forbid")
 
     role: str
     content: str
+    
     timestamp: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
     )
 
 
+
 class SessionState(BaseModel):
+    """
+    Attributes:
+        session_id (str).
+        messages (list[Message]): list of messages in this conversation.
+        user_email (Optional[str]): email of user.
+        pending_action (Optional[PendingAction]): details of action .
+        summary_offered (bool): if user want summary.
+        escalated (bool): if the agent can't solve issue , we will redirect user to support team.
+        send_count (int): limit of success sending emails.
+        processed_action_ids (set[str]): Prevent duplicate action execution.
+        created_at (datetime): timestamp.
+        updated_at (datetime): timestamp.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     session_id: str
 
-    # Conversation history
     messages: list[Message] = Field(default_factory=list)
 
     user_email: Optional[str] = None
 
     pending_action: Optional[PendingAction] = None
 
-    # Session flags
-    summary_offered: bool = False # if user want summary
-    escalated: bool = False # if the agent can't solve issue , we will redirect user to support team
+    summary_offered: bool = False 
+    escalated: bool = False
 
-    # Sending limits and duplicate prevention
     send_count: int = 0
     processed_action_ids: set[str] = Field(default_factory=set)
 
