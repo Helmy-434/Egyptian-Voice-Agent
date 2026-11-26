@@ -3,7 +3,7 @@ import io
 from typing import Literal, Protocol, runtime_checkable
 import wave
 
-from app.config import Settings
+from app.configs import Settings
 
 SampleRate = Literal[8000, 16000]
 

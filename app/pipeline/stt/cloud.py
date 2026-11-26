@@ -2,7 +2,7 @@ import asyncio
 import base64
 from typing import Any
 
-from app.config import Settings
+from app.configs import Settings
 from app.pipeline.stt.base import STTError, STTResult, SampleRate, pcm16_to_wav_bytes
 
 _MIN_AUDIO_SEC = 0.10

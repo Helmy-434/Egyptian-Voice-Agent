@@ -6,7 +6,7 @@ import wave
 
 import pytest
 
-from app.config import Settings
+from app.configs import Settings
 from app.pipeline.stt.base import STTResult
 from app.pipeline.stt.cloud import CloudSTT
 
