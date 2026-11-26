@@ -4,7 +4,7 @@ from enum import StrEnum
 from uuid import uuid4
 from typing import Optional
 from threading import RLock
-
+from typing import Literal
 
 
 class ActionStatus(StrEnum):
@@ -19,19 +19,7 @@ class ActionStatus(StrEnum):
     
 
 class PendingAction(BaseModel):
-    """
-    Attributes:
-        action_id (str).
-        tool (str): which tool model call ( email , telegram ).
-        recipient (str): reciever of message.
-        subject (str): title of message.
-        content (str): message content.
-        summary (str).
-        confirmed (bool): flag for message status.
-        status (ActionStatus): 6 status.
-        created_at (datetime): timestamp.
-    """
-    
+
     model_config = ConfigDict(extra="forbid")
     
     action_id: str = Field(default_factory=lambda: str(uuid4()))
@@ -52,13 +40,7 @@ class PendingAction(BaseModel):
 
 
 class Message(BaseModel):
-    """
-    Attributes:
-        role (str): who sent message.
-        content (str): message content.
-        timestamp (datetime): current time of sending message.
-    """
-    
+
     model_config = ConfigDict(extra="forbid")
 
     role: str
@@ -71,19 +53,6 @@ class Message(BaseModel):
 
 
 class SessionState(BaseModel):
-    """
-    Attributes:
-        session_id (str).
-        messages (list[Message]): list of messages in this conversation.
-        user_email (Optional[str]): email of user.
-        pending_action (Optional[PendingAction]): details of action .
-        summary_offered (bool): if user want summary.
-        escalated (bool): if the agent can't solve issue , we will redirect user to support team.
-        send_count (int): limit of success sending emails.
-        processed_action_ids (set[str]): Prevent duplicate action execution.
-        created_at (datetime): timestamp.
-        updated_at (datetime): timestamp.
-    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -112,22 +81,11 @@ class SessionState(BaseModel):
     
     
 _sessions : [str , SessionState] = {}
-_lock = RLock
+_lock = RLock()
 
 
 def create_sessoin(session_id : str , user_email : str | None) -> SessionState :
-    """
-    Args:
-        session_id (str): identify the session.
-        user_email (str | None): user email in initilization if given.
 
-    Returns:
-        SessionState: session model.
-
-    Raises:
-        ValueError: Issue in value of session id ( empty or exist , unvalid).
-    """
-    
     if not session_id.strip():
         raise ValueError("Session ID can't be empty")
     
@@ -147,13 +105,9 @@ def create_sessoin(session_id : str , user_email : str | None) -> SessionState :
     
     
 def get_session(session_id : str)-> SessionState | None : 
-    """
-    Args:
-        session_id (str): identify the session.
 
-    Returns:
-        SessionState | None: session model.
-    """
+    if not session_id.strip() : 
+        raise ValueError("Session ID can't be Empty")
     
     with _lock : 
         
@@ -165,20 +119,10 @@ def get_session(session_id : str)-> SessionState | None :
         return session.model_copy(deep=True)
     
 
-def add_message(session_id : str , content : str , role : str)-> Message : 
-    """
-    Args:
-        session_id (str).
-        content (str).
-        role (str).
+def add_message(session_id : str , content : str , role: Literal["system", "user", "assistant", "tool"] )-> Message : 
 
-    Returns:
-        Message.
-
-    Raises:
-        ValueError.
-        KeyError.
-    """
+    if not session_id.strip() : 
+        raise ValueError("Session ID can't be Empty")
     
     if not content.strip() :
         raise ValueError("Message Content can't be empty")
@@ -203,25 +147,268 @@ def add_message(session_id : str , content : str , role : str)-> Message :
 
 
 def get_messages(session_id : str)-> list[Message] :
-    """
-    Args:
-        session_id (str).
 
-    Returns:
-        list[Message].
-
-    Raises:
-        KeyError.
-    """
-    
-    if session_id is None : 
-        raise KeyError("Sessions ID not exist")
+    if not session_id.strip() : 
+        raise ValueError("Session ID can't be Empty")
     
     
     with _lock :
         
         session = _sessions.get(session_id)
         
+        if session is None : 
+            raise KeyError("Session Not Found!")
+        
         messages = sessions.messages
         
         return messages.model_copy(deep=True)
+    
+    
+    
+def set_pending_action(session_id : str , tool : str , recipient : str , subject : str , content : str , summary : str)-> PendingAction :
+    
+    if not session_id.strip() : 
+        raise ValueError("Session ID can't be Empty")
+    
+    
+    action = PendingAction(
+        tool=tool,
+        recipient=recipient,
+        subject=subject,
+        content=content,
+        summary=summary,
+    )
+
+    with _lock:
+        session = _sessions.get(session_id)
+
+        if session is None:
+            raise KeyError(f"Session not found: {session_id}")
+
+        if session.pending_action is not None:
+            
+            active_statuses = {
+                ActionStatus.PENDING_CONFIRMATION,
+                ActionStatus.CONFIRMED,
+                ActionStatus.EXECUTING,
+            }
+
+            if session.pending_action.status in active_statuses:
+                raise ValueError(
+                    "An active pending action already exists"
+                )
+
+        session.pending_action = action
+        session.updated_at = datetime.now(timezone.utc)
+
+    return action.model_copy(deep=True)
+
+
+
+def get_pending_action(session_id : str)-> PendingAction | None :
+    
+    if not session_id.strip() : 
+        raise ValueError("Session ID can't be Empty")
+    
+    with _lock : 
+        
+        session = _sessions.get(session_id)
+        
+        if session is None : 
+            raise KeyError("Session Not Found!")
+        
+        if session.pending_action is None : 
+            return None
+        
+        return session.pending_action.model_copy(deep=True)
+    
+    
+    
+def confirm_pending_action(session_id : str , action_id : str)->PendingAction :
+    
+    if session_id is None : 
+        raise ValueError("Session ID can't be Empty!")
+    
+    if action_id is None :
+        raise ValueError("Actino ID can't be Empty!")
+    
+    
+    with _lock : 
+        
+        session = _sessions[session_id]
+        
+        if session is None : 
+            raise KeyError("Session Not Found!")
+        
+        action = session.pending_action
+        
+        if action.action_id != action_id:
+            raise ValueError("No matching pending action")
+
+        if action.status != ActionStatus.PENDING_CONFIRMATION:
+            raise ValueError("Action is not awaiting confirmation")
+        
+        action.status = ActionStatus.CONFIRMED
+        action.confirmed = True
+        session.updated_at = datetime.now(timezone.utc)
+        
+        return action.model_copy(deep=True)
+    
+    
+def cancel_pending_action(session_id: str, action_id: str) -> PendingAction:
+
+    with _lock:
+        session = _sessions.get(session_id)
+
+        if session is None:
+            raise KeyError(f"Session not found: {session_id}")
+
+        action = session.pending_action
+
+        if action is None or action.action_id != action_id:
+            raise ValueError("No matching pending action")
+
+        if action.status in {
+            ActionStatus.EXECUTING,
+            ActionStatus.SENT,
+        }:
+            raise ValueError("Cannot cancel an action that has started")
+
+        action.confirmed = False
+        action.status = ActionStatus.CANCELLED
+        session.updated_at = datetime.now(timezone.utc)
+
+        return action.model_copy(deep=True)
+    
+    
+def claim_confirmed_action(session_id: str,action_id: str,max_sends: int) -> PendingAction:
+
+    with _lock:
+        session = _sessions.get(session_id)
+
+        if session is None:
+            raise KeyError(f"Session not found: {session_id}")
+
+        action = session.pending_action
+
+        if action is None or action.action_id != action_id:
+            raise ValueError("No matching pending action")
+
+        if not action.confirmed:
+            raise PermissionError("Action has not been confirmed")
+
+        if action.status != ActionStatus.CONFIRMED:
+            raise ValueError("Action is not available for execution")
+
+        if action_id in session.processed_action_ids:
+            raise ValueError("Action has already been processed")
+
+        if session.send_count >= max_sends:
+            raise PermissionError("Session send limit reached")
+
+        action.status = ActionStatus.EXECUTING
+
+        session.processed_action_ids.add(action_id)
+
+        session.updated_at = datetime.now(timezone.utc)
+
+        return action.model_copy(deep=True)
+    
+    
+    
+def mark_action_sent(session_id: str, action_id: str) -> PendingAction:
+
+    with _lock:
+        session = _sessions.get(session_id)
+
+        if session is None:
+            raise KeyError(f"Session not found: {session_id}")
+
+        action = session.pending_action
+
+        if action is None or action.action_id != action_id:
+            raise ValueError("No matching pending action")
+
+        if action.status != ActionStatus.EXECUTING:
+            raise ValueError("Action is not executing")
+
+        action.status = ActionStatus.SENT
+        session.send_count += 1
+        session.updated_at = datetime.now(timezone.utc)
+
+        return action.model_copy(deep=True)
+    
+    
+def mark_action_failed(session_id: str,action_id: str) -> PendingAction:
+
+    with _lock:
+        session = _sessions.get(session_id)
+
+        if session is None:
+            raise KeyError(f"Session not found: {session_id}")
+
+        action = session.pending_action
+
+        if action is None or action.action_id != action_id:
+            raise ValueError("No matching pending action")
+
+        if action.status != ActionStatus.EXECUTING:
+            raise ValueError("Action is not executing")
+
+        action.status = ActionStatus.FAILED
+        action.confirmed = False
+        session.updated_at = datetime.now(timezone.utc)
+
+        return action.model_copy(deep=True)
+    
+    
+
+def mark_summary_offered(session_id: str) -> bool:
+
+    with _lock:
+        session = _sessions.get(session_id)
+
+        if session is None:
+            raise KeyError(f"Session not found: {session_id}")
+
+        if session.summary_offered:
+            return False
+
+        session.summary_offered = True
+        session.updated_at = datetime.now(timezone.utc)
+
+        return True
+    
+    
+def mark_escalated(session_id: str) -> bool:
+
+    with _lock:
+        session = _sessions.get(session_id)
+
+        if session is None:
+            raise KeyError(f"Session not found: {session_id}")
+
+        if session.escalated:
+            return False
+
+        session.escalated = True
+        session.updated_at = datetime.now(timezone.utc)
+
+        return True
+    
+def get_send_count(session_id: str) -> int:
+
+    with _lock:
+        session = _sessions.get(session_id)
+
+        if session is None:
+            raise KeyError(f"Session not found: {session_id}")
+
+        return session.send_count
+
+def close_session(session_id: str) -> bool:
+
+    with _lock:
+        session = _sessions.pop(session_id, None)
+
+        return session is not None0
