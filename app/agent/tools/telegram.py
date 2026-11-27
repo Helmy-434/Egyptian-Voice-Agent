@@ -4,7 +4,9 @@ import json
 import urllib.error
 import urllib.parse
 import urllib.request
-
+from langchain_core.tools import tool
+from langchain_core.runnables import RunnableConfig
+from app.agent import state as session_store
 from app.configs import get_settings
 
 TELEGRAM_API_URL = "https://api.telegram.org/bot{token}/sendMessage"
@@ -64,4 +66,94 @@ def send_telegram_alert(*,message: str, idempotency_key: str) -> dict:
         "dry_run": False,
         "message_id": body.get("result", {}).get("message_id"),
         "idempotency_key": idempotency_key,
+    }
+
+
+
+@tool
+def request_escalation(reason: str, conversation_summary: str, config: RunnableConfig) -> dict:
+    """Request human support when the customer needs assistance
+    that the AI agent cannot provide.
+
+    Use this tool when:
+    - The customer explicitly requests a human agent.
+    - The issue requires human intervention.
+    - The agent cannot resolve the issue reliably.
+
+    Args:
+        reason: Why human intervention is required.
+        conversation_summary: A concise summary of the customer's issue.
+    """
+
+    session_id = config.get("configurable", {}).get("session_id")
+
+    if not session_id:
+        raise ValueError("Missing session ID in agent configuration")
+
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("Escalation reason cannot be empty")
+
+    if not isinstance(conversation_summary, str):
+        raise ValueError("Invalid conversation summary")
+
+    reason = reason.strip()
+    conversation_summary = conversation_summary.strip()
+
+    if len(reason) > 1000:
+        raise ValueError("Escalation reason is too long")
+
+    if not conversation_summary or len(conversation_summary) > 3000:
+        raise ValueError("Invalid conversation summary")
+
+    session = session_store.get_session(session_id)
+
+    if session is None:
+        raise KeyError("Session not found")
+
+    if session.escalated:
+        return {
+            "success": True,
+            "status": "already_escalated",
+            "message": "This session has already been escalated.",
+        }
+
+    customer_email = None
+
+    notification = (
+        "Human Support Escalation\n\n"
+        f"Session ID: {session_id}\n"
+        f"Reason: {reason}\n"
+        f"Conversation Summary: {conversation_summary}\n"
+    )
+
+    if customer_email:
+        notification += f"Customer Email: {customer_email}\n"
+
+    idempotency_key = f"escalation:{session_id}"
+
+    try:
+        result = send_telegram_alert(
+            message=notification,
+            idempotency_key=idempotency_key,
+        )
+    except Exception:
+        raise RuntimeError(
+            "Unable to notify the support team"
+        ) from None
+
+    marked = session_store.mark_escalated(session_id)
+
+    if not marked:
+        return {
+            "success": True,
+            "status": "already_escalated",
+            "message": "This session has already been escalated.",
+        }
+
+    return {
+        "success": True,
+        "status": "escalated",
+        "message": "The support team has been notified.",
+        "session_id": session_id,
+        "dry_run": result.get("dry_run", False),
     }
