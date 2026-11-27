@@ -84,7 +84,7 @@ _sessions : [str , SessionState] = {}
 _lock = RLock()
 
 
-def create_sessoin(session_id : str , user_email : str | None) -> SessionState :
+def create_session(session_id : str , user_email : str | None) -> SessionState :
 
     if not session_id.strip():
         raise ValueError("Session ID can't be empty")
@@ -140,28 +140,29 @@ def add_message(session_id : str , content : str , role: Literal["system", "user
             raise KeyError("Session Not Found")
         
         session.messages.append(new_message)
-        session.updated_at = datatime.now(timezone.utc)
+        session.updated_at = datetime.now(timezone.utc)
         
 
     return new_message.model_copy(deep=True)
 
 
-def get_messages(session_id : str)-> list[Message] :
 
-    if not session_id.strip() : 
-        raise ValueError("Session ID can't be Empty")
+def get_messages(session_id: str) -> list[Message]:
     
-    
-    with _lock :
-        
+    if not session_id.strip():
+        raise ValueError("Session ID can't be empty")
+
+    with _lock:
         session = _sessions.get(session_id)
-        
-        if session is None : 
-            raise KeyError("Session Not Found!")
-        
-        messages = sessions.messages
-        
-        return messages.model_copy(deep=True)
+
+        if session is None:
+            raise KeyError(f"Session not found: {session_id}")
+
+        return [
+            message.model_copy(deep=True)
+            for message in session.messages
+        ]
+
     
     
     
@@ -411,4 +412,4 @@ def close_session(session_id: str) -> bool:
     with _lock:
         session = _sessions.pop(session_id, None)
 
-        return session is not None0
+        return session is not None
