@@ -53,6 +53,30 @@ single-worker executor off the event loop. Concurrent requests fail fast while
 an inference is busy, and local inference timeouts are surfaced as `STTError`.
 The server loads the model once at startup and is stopped during app shutdown.
 
+## Local VoiceTut-TTS Setup
+
+Install a PyTorch build compatible with your Python version and GPU using the
+[official PyTorch instructions](https://pytorch.org/get-started/locally/), then
+install the local GPU dependencies:
+
+```powershell
+pip install -r requirements-gpu.txt
+```
+
+Set `TTS_PROVIDER=voicetut` and make the VoiceTut GGUF plus `audiocpp_server.exe`
+available locally. The defaults are
+`QwenCleo/models/voicetut-tts-q8_0.gguf` and
+`QwenCleo/runtime/audiocpp_server.exe`; override them with
+`VOICETUT_MODEL_PATH` and `VOICETUT_SERVER_PATH` if needed. The engine starts
+the server on `VOICETUT_SERVER_PORT` (default `18762`) and streams PCM audio
+from its `/v1/audio/speech` endpoint. The server port is separate from the
+QwenCleo STT default (`18761`).
+
+The default speakers are `Mohammed` (male) and `Yasmin` (female); override
+`VOICETUT_MALE_VOICE` or `VOICETUT_FEMALE_VOICE` with speaker IDs supported by
+the installed GGUF. CPU inference is disabled by default; enable
+`VOICETUT_ALLOW_CPU=true` only when intentionally running without CUDA.
+
 ## Project Structure
 
 ```text

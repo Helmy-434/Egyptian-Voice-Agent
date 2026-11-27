@@ -30,8 +30,8 @@ class Settings(BaseSettings):
 
     # --- Voice Selection & Provider Speaker Mapping ---
     default_voice: Literal["male", "female"] = "female"
-    voicetut_male_voice: str = "male_1"
-    voicetut_female_voice: str = "female_1"
+    voicetut_male_voice: str = "Mohammed"
+    voicetut_female_voice: str = "Yasmin"
     azure_male_voice: str = "ar-EG-ShakirNeural"
     azure_female_voice: str = "ar-EG-SalmaNeural"
     edge_male_voice: str = "ar-EG-ShakirNeural"
@@ -97,6 +97,15 @@ class Settings(BaseSettings):
     stt_timeout_per_audio_sec: float = 0.15     # Extra allowance per second of speech
     gemini_stt_model: str = "gemini-3.5-transcribe"
     stt_cloud_timeout_sec: float = 15.0
+
+    # --- Local TTS Tuning ---
+    voicetut_model_path: str = "QwenCleo/models/voicetut-tts-q8_0.gguf"
+    voicetut_server_path: str = "QwenCleo/runtime/audiocpp_server.exe"
+    voicetut_server_port: int = Field(default=18762, ge=1, le=65535)
+    voicetut_server_startup_timeout_sec: float = Field(default=120.0, gt=0)
+    voicetut_allow_cpu: bool = False
+    tts_first_chunk_timeout_sec: float = Field(default=3.0, gt=0)
+    tts_total_timeout_sec: float = Field(default=10.0, gt=0)
 
     @field_validator(
         "groq_api_key",
