@@ -6,13 +6,32 @@ readme = "README.md"
 requires-python = ">=3.13"
 
 dependencies = [
-    "pydantic>=2.7.0",
-    "pydantic-settings>=2.2.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    "google-genai",
+    "langchain",
+    "langchain-core",
+    "langchain-openai",
+    "langgraph",
 ]
 
 authors = [
     {name = "Abdelrahman Gaber", email = "abdelrahman.gaber.hamdy@gmail.com"},
     {name = "Yousef Helmy", email = "youssefhelmy1113@gmail.com"}
+]
+
+[project.optional-dependencies]
+gpu = [
+    "numpy>=1.26",
+    "silero-vad>=5.1.2",
+    "sounddevice>=0.5",
+]
+eval = [
+    "edge-tts",
+    "librosa",
+    "numpy>=1.26",
 ]
 
 [dependency-groups]
@@ -23,4 +42,5 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-v"
+addopts = "-v -m 'not live'"
+markers = ["live: needs real API keys or a GPU (skipped by default)"]

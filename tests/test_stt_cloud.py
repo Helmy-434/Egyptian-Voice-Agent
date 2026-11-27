@@ -23,7 +23,7 @@ class _FakeInteractions:
 
 def test_gemini_transcription_wraps_pcm_as_wav_and_strips_text() -> None:
     interactions = _FakeInteractions("  أهلا وسهلا  ")
-    engine = CloudSTT(Settings(gemini_api_key="test-key"))
+    engine = CloudSTT(Settings(_env_file=None, gemini_api_key="test-key"))
     engine._aio_client = SimpleNamespace(interactions=interactions)
 
     result = asyncio.run(engine.transcribe(b"\x00\x00" * 1600, sample_rate=16000))
@@ -50,7 +50,7 @@ def test_gemini_transcription_wraps_pcm_as_wav_and_strips_text() -> None:
 
 
 def test_gemini_transcription_skips_audio_shorter_than_minimum() -> None:
-    engine = CloudSTT(Settings(gemini_api_key="test-key"))
+    engine = CloudSTT(Settings(_env_file=None, gemini_api_key="test-key"))
 
     result = asyncio.run(engine.transcribe(b"\x00\x00" * 1599))
 
@@ -58,7 +58,7 @@ def test_gemini_transcription_skips_audio_shorter_than_minimum() -> None:
 
 
 def test_cloud_stt_requires_gemini_api_key() -> None:
-    settings = Settings(stt_provider="cloud")
+    settings = Settings(_env_file=None, stt_provider="cloud")
 
     with pytest.raises(ValueError, match="GEMINI_API_KEY"):
         settings.validate_for_runtime()

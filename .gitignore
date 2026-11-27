@@ -152,6 +152,7 @@ activemq-data/
 # Environments
 .env
 .envrc
+.venv/
 .venv
 env/
 venv/
@@ -223,6 +224,7 @@ __marimo__/
 
 # Python
 __pycache__/
+.pytest_cache/
 *.py[cod]
 *$py.class
 *.egg-info/
@@ -244,15 +246,20 @@ htmlcov/
 !.env.example
 
 # Runtime logs & audio artifacts
+logs/
 logs/*.jsonl
 logs/*.log
 scripts/eval_clips/*.wav
 scripts/eval_clips/*.mp3
 scripts/eval_clips/*.flac
+scripts/eval_outputs/
 
 # Model checkpoints & cache
 models/
+QwenCleo/models/
+QwenCleo/runtime/
 checkpoints/
+*.gguf
 *.pt
 *.pth
 *.onnx
