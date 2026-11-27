@@ -297,14 +297,19 @@ class VoiceSession:
                         await self._sink.send_bytes(audio.pcm)
                         self._audio_seconds_sent += len(audio.pcm) / (2 * audio.sample_rate)
                     break
+
                 except TTSError as exc:
                     if attempt == 0:
                         await asyncio.sleep(0.3)
                         continue
+
                     await self._sink.send_json(
-                        {"type": "error", "code": "tts_failed", "message": str(exc)}
+                        {
+                            "type": "error",
+                            "code": "tts_failed",
+                            "message": str(exc),
+                        }
                     )
-                    self._acked.add(chunk_id)
 
             await self._sink.send_json({"type": "tts_chunk_end", "chunk_id": chunk_id})
 
