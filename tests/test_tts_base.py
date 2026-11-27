@@ -44,7 +44,7 @@ class _FakeTTSEngine:
 
 def _make_settings(**overrides: object) -> Settings:
     defaults: dict[str, object] = {
-        "llm_provider": "groq",
+        "_env_file": None,
         "tts_provider": "voicetut",
         "voicetut_male_voice": "Mohammed",
         "voicetut_female_voice": "Yasmin",
@@ -135,7 +135,8 @@ def test_streaming_chunks_preserve_pcm_and_sample_rate(monkeypatch: pytest.Monke
 
     def fake_read_pcm(text, speaker, cancel, response_holder, response_lock):
         speakers.append(speaker)
-        yield pcm
+        for offset in range(0, len(pcm), 1024):
+            yield pcm[offset : offset + 1024]
 
     monkeypatch.setattr(engine, "_read_pcm_sync", fake_read_pcm)
 
@@ -143,6 +144,7 @@ def test_streaming_chunks_preserve_pcm_and_sample_rate(monkeypatch: pytest.Monke
         chunks = [chunk async for chunk in engine.synthesize_stream("صباح الخير", "female")]
         assert b"".join(chunk.pcm for chunk in chunks) == pcm
         assert len(chunks) == 2
+        assert len(chunks[0].pcm) <= 1024
         assert all(chunk.sample_rate == 24000 for chunk in chunks)
         assert speakers == ["Yasmin"]
         await engine.close()
@@ -240,7 +242,8 @@ def test_abandoned_worker_fails_fast_then_recovers(monkeypatch: pytest.MonkeyPat
             async for _ in engine.synthesize_stream("جملة بطيئة", "male"):
                 pass
         assert worker_started.is_set()
-        assert engine._abandoned.is_set()
+        abandoned_job = engine._abandoned_job
+        assert abandoned_job is not None and not abandoned_job.is_set()
 
         with pytest.raises(TTSError, match="abandoned"):
             async for _ in engine.synthesize_stream("جملة تانية", "female"):
@@ -248,7 +251,7 @@ def test_abandoned_worker_fails_fast_then_recovers(monkeypatch: pytest.MonkeyPat
 
         release_worker.set()
         for _ in range(50):
-            if not engine._abandoned.is_set() and not engine._worker_busy.is_set():
+            if abandoned_job.is_set() and not engine._worker_busy.is_set():
                 break
             await asyncio.sleep(0.01)
 
@@ -263,7 +266,12 @@ def test_abandoned_worker_fails_fast_then_recovers(monkeypatch: pytest.MonkeyPat
     not Path("QwenCleo/models/voicetut-tts-q8_0.gguf").is_file(),
     reason="Local VoiceTut GGUF unavailable",
 )
+@pytest.mark.live
 def test_voicetut_local_gpu_integration() -> None:
+    torch = pytest.importorskip("torch", reason="PyTorch is required for local GPU integration")
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA is unavailable for local GPU integration")
+
     async def _run() -> None:
         engine = create_tts_engine(
             _make_settings(

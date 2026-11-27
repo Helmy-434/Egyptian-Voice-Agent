@@ -14,7 +14,7 @@ import pytest
 from pytest import MonkeyPatch
 
 from app.configs import Settings
-from app.pipeline.stt.base import STTResult
+from app.pipeline.stt.base import STTError, STTResult
 from app.pipeline.stt.qwencleo import QwenCleoSTT
 
 
@@ -38,7 +38,7 @@ class _RunningProcess:
 
 
 def test_qwencleo_transcription_posts_a_temporary_wav(monkeypatch: MonkeyPatch) -> None:
-    engine = QwenCleoSTT(Settings(_env_file=None, llm_provider="groq", stt_timeout_sec=5.0))
+    engine = QwenCleoSTT(Settings(_env_file=None, stt_timeout_sec=5.0))
     engine._server_process = cast(subprocess.Popen[bytes], _RunningProcess())
     server_temp = tempfile.TemporaryDirectory(prefix="qwencleo-test-")
     engine._server_temp = server_temp
@@ -72,7 +72,7 @@ def test_qwencleo_transcription_posts_a_temporary_wav(monkeypatch: MonkeyPatch) 
 
 
 def test_qwencleo_skips_audio_shorter_than_minimum_without_startup() -> None:
-    engine = QwenCleoSTT(Settings(_env_file=None, llm_provider="groq"))
+    engine = QwenCleoSTT(Settings(_env_file=None))
     try:
         assert asyncio.run(engine.transcribe(b"\x00\x00" * 1599)) == STTResult(
             text="",
@@ -86,7 +86,6 @@ def test_qwencleo_timeout_is_fail_fast_while_worker_remains_busy(monkeypatch: Mo
     engine = QwenCleoSTT(
         Settings(
             _env_file=None,
-            llm_provider="groq",
             stt_timeout_sec=0.05,
             stt_timeout_per_audio_sec=0,
         )
@@ -128,7 +127,7 @@ def test_qwencleo_timeout_is_fail_fast_while_worker_remains_busy(monkeypatch: Mo
 
 
 def test_qwencleo_server_crash_is_reported_as_stt_error(monkeypatch: MonkeyPatch) -> None:
-    engine = QwenCleoSTT(Settings(_env_file=None, llm_provider="groq", stt_timeout_sec=1.0))
+    engine = QwenCleoSTT(Settings(_env_file=None, stt_timeout_sec=1.0))
     engine._server_process = cast(subprocess.Popen[bytes], _RunningProcess())
     server_temp = tempfile.TemporaryDirectory(prefix="qwencleo-crash-test-")
     engine._server_temp = server_temp

@@ -1,8 +1,8 @@
 import asyncio
 import re
 
-from app.agent.stub import close_session, stream_agent_turn
-from app.configs import get_settings
+from dev.stub_agent import close_session, stream_agent_turn
+from app.configs import Settings
 from app.contracts import (
     AgentChunk,
     AgentRequest,
@@ -34,7 +34,7 @@ def _assert_stream_invariants(chunks: list[AgentChunk]) -> None:
 
 
 def test_config_chunk_cap_matches_contract() -> None:
-    settings = get_settings()
+    settings = Settings(_env_file=None)
     assert settings.chunk_max_chars <= MAX_SPEAKABLE_CHARS
 
 
