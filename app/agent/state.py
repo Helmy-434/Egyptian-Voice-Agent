@@ -80,7 +80,7 @@ class SessionState(BaseModel):
     
     
     
-_sessions : [str , SessionState] = {}
+_sessions : dict[str , SessionState] = {}
 _lock = RLock()
 
 
