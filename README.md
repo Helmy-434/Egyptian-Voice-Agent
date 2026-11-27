@@ -12,14 +12,46 @@ Gemini provider defaults to `gemini-3.5-transcribe`; adjust
 
 ## Local QwenCleo Setup
 
-The local `qwencleo` provider uses the existing GGUF model and
-`QwenCleo/runtime/audiocpp_server.exe`; it does not download Hugging Face model
-weights. Ensure both files exist at the paths configured by
-`QWENCLEO_MODEL_PATH` and `QWENCLEO_SERVER_PATH` (their defaults point to the
-repository's `QwenCleo` directory), then set `STT_PROVIDER=qwencleo`. At app
-startup, the driver starts the server and loads the model once; it stops the
-server during app shutdown. CUDA is used by default. Set
-`QWENCLEO_ALLOW_CPU=true` to explicitly use the CPU backend.
+The local `qwencleo` provider uses the `QwenCleo-ASR` GGUF fine-tune, quantized
+as **Q8_0** (about 2.48 GB), with the audio.cpp server. Model files and runtime
+binaries are intentionally excluded from Git by `.gitignore`; install them
+locally for each clone:
+
+1. Download `qwencleo-asr-q8_0.gguf` from the
+   [QwenCleo-ASR-GGUF model repository](https://huggingface.co/mohammedaly22/QwenCleo-ASR-GGUF)
+   and place it at `QwenCleo/models/qwencleo-asr-q8_0.gguf`.
+2. From the
+   [audio.cpp v0.9.6 release](https://github.com/0xShug0/audio.cpp/releases/tag/v0.9.6),
+   download and extract `audio-v0.9.6-bin-windows-x64-cuda12.4.zip` into
+   `QwenCleo/runtime`.
+3. Extract the matching
+   `audio-v0.9.6-cudart-windows-x64-cuda12.4.zip` into the same
+   `QwenCleo/runtime` directory so the CUDA runtime DLLs are beside
+   `audiocpp_server.exe`.
+
+For example, after downloading both archives to `Downloads`, run in
+PowerShell from the repository root:
+
+```powershell
+New-Item -ItemType Directory -Force .\QwenCleo\runtime, .\QwenCleo\models
+Expand-Archive "$HOME\Downloads\audio-v0.9.6-bin-windows-x64-cuda12.4.zip" .\QwenCleo\runtime
+Expand-Archive "$HOME\Downloads\audio-v0.9.6-cudart-windows-x64-cuda12.4.zip" .\QwenCleo\runtime -Force
+```
+
+Ensure the model and `audiocpp_server.exe` exist at the paths configured by
+`QWENCLEO_MODEL_PATH` and `QWENCLEO_SERVER_PATH`, then set
+`STT_PROVIDER=qwencleo`. CUDA is used by default; set
+`QWENCLEO_ALLOW_CPU=true` to use the CPU backend.
+The Python driver also needs PyTorch installed to detect CUDA and select the
+server backend; inference itself runs in audio.cpp. Install a PyTorch build
+compatible with your Python and GPU setup using the
+[official PyTorch instructions](https://pytorch.org/get-started/locally/).
+
+The app manages `audiocpp_server.exe` as a separate process, keeping native
+runtime crashes isolated from the Python server. Qwen inference runs in a
+single-worker executor off the event loop. Concurrent requests fail fast while
+an inference is busy, and local inference timeouts are surfaced as `STTError`.
+The server loads the model once at startup and is stopped during app shutdown.
 
 ## Project Structure
 

@@ -1,5 +1,6 @@
 from functools import lru_cache
 import json
+from pathlib import Path
 import re
 from typing import Annotated, Literal, Optional
 from urllib.parse import urlparse
@@ -12,9 +13,8 @@ from app.contracts import MAX_SPEAKABLE_CHARS
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-PROJECT_ROOT = Path(__name__).resolve().parents[1]
-
-ENV_FILE_PATH = PROJECT_ROOT + ".env"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+ENV_FILE_PATH = PROJECT_ROOT / ".env"
 
 
 class Settings(BaseSettings):
@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     # --- Secrets ---
     groq_api_key: SecretStr = SecretStr("")
     openai_api_key: SecretStr = SecretStr("")
+    openrouter_api_key: SecretStr = SecretStr("")
     azure_speech_key: SecretStr = SecretStr("")
     azure_speech_region: str = "eastus"
     gemini_api_key: SecretStr = SecretStr("")
@@ -101,6 +102,7 @@ class Settings(BaseSettings):
     @field_validator(
         "groq_api_key",
         "openai_api_key",
+        "openrouter_api_key",
         "azure_speech_key",
         "gemini_api_key",
         "gmail_app_password",
@@ -159,6 +161,7 @@ class Settings(BaseSettings):
         default_urls = {
             "groq": "https://api.groq.com/openai/v1",
             "openai": "https://api.openai.com/v1",
+            "openrouter": "https://openrouter.ai/api/v1",
         }
         if not self.llm_base_url or not self.llm_base_url.strip():
             self.llm_base_url = default_urls[self.llm_provider]
@@ -182,6 +185,11 @@ class Settings(BaseSettings):
                 raise ValueError("GROQ_API_KEY is required when agent_backend='graph' and llm_provider='groq'")
             if self.llm_provider == "openai" and not openai_key:
                 raise ValueError("OPENAI_API_KEY is required when agent_backend='graph' and llm_provider='openai'")
+            if self.llm_provider == "openrouter" and not self.openrouter_api_key.get_secret_value():
+                raise ValueError(
+                    "OPENROUTER_API_KEY is required when agent_backend='graph' "
+                    "and llm_provider='openrouter'"
+                )
 
         if self.stt_provider == "cloud":
             if self.stt_cloud_provider == "gemini" and not self.gemini_api_key.get_secret_value():

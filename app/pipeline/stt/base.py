@@ -67,7 +67,7 @@ def pcm16_to_wav_bytes(audio: bytes, sample_rate: SampleRate = 16000) -> bytes:
 
 
 def create_stt_engine(settings: Settings) -> STTEngine:
-    """Lazy factory so CPU cloud deployments never import torch or qwen-asr."""
+    """Lazy factory so cloud deployments never import torch or start audio.cpp."""
     if settings.stt_provider == "qwencleo":
         from app.pipeline.stt.qwencleo import QwenCleoSTT
 
