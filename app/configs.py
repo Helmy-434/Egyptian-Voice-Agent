@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     stt_cloud_provider: Literal["gemini"] = "gemini"
     tts_provider: Literal["voicetut", "cloud"] = "voicetut"
     tts_cloud_provider: Literal["azure", "edge"] = "edge"
+    vad_provider: Literal["silero", "energy"] = "silero"
 
     # --- Voice Selection & Provider Speaker Mapping ---
     default_voice: Literal["male", "female"] = "female"

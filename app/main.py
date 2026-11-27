@@ -16,7 +16,7 @@ from app.configs import PROJECT_ROOT, Settings, get_settings
 from app.pipeline.latency import LatencyTracker
 from app.pipeline.stt.base import create_stt_engine
 from app.pipeline.tts.base import create_tts_engine
-from app.pipeline.vad import SileroVAD
+from app.pipeline.vad_energy import EnergyVAD
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,13 @@ def create_app(
 
         owned_vad = None
         if vad is None:
-            owned_vad = SileroVAD(cfg.audio_sample_rate)
+            if cfg.vad_provider == "energy":
+                owned_vad = EnergyVAD(cfg.audio_sample_rate)
+                logger.info("Using lightweight energy-based VAD (no GPU required).")
+            else:
+                from app.pipeline.vad import SileroVAD
+                owned_vad = SileroVAD(cfg.audio_sample_rate)
+                logger.info("Using Silero VAD (GPU/CPU with torch).")
             app.state.vad = owned_vad
         else:
             app.state.vad = vad
