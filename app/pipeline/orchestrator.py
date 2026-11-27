@@ -33,6 +33,10 @@ class VoiceSession:
         voice: Literal["male", "female"],
         email: str | None = None,
     ) -> None:
+
+        self._confirmation_chunks: dict[str, set[int]] = {}
+        self._confirmation_action_id: str | None = None
+
         self.session_id = session_id
         self._settings = settings
         self._stt = stt
@@ -82,6 +86,8 @@ class VoiceSession:
             await self._sink.send_json({"type": "state", "state": new_state})
 
     def _reset_turn_playback_state(self) -> None:
+        self._confirmation_chunks.clear()
+        self._confirmation_action_id = None
         self._sent_order.clear()
         self._acked.clear()
         self._chunk_texts.clear()
@@ -157,7 +163,7 @@ class VoiceSession:
 
     async def _run_turn(self, pcm: bytes, timer: TurnTimer) -> None:
         self._reset_turn_playback_state()
-        text_q: asyncio.Queue[str | None] = asyncio.Queue()
+        text_q: asyncio.Queue[tuple[str, str | None] | None] = asyncio.Queue()
         tts_task = asyncio.create_task(self._tts_worker(text_q, timer))
         agen: AsyncGenerator[AgentChunk, None] | None = None
         cancelled_by_barge_in = False
@@ -190,11 +196,40 @@ class VoiceSession:
             async for chunk in agen:
                 if chunk.type == "text_delta":
                     timer.mark("agent_first_chunk")
-                    await self._sink.send_json({"type": "agent_text", "text": chunk.content})
-                    await text_q.put(chunk.content)
+
+                    confirmation_action_id = None
+                    if chunk.metadata:
+                        confirmation_action_id = chunk.metadata.get(
+                            "confirmation_action_id"
+                        )
+
+                    await self._sink.send_json(
+                        {"type": "agent_text", "text": chunk.content}
+                    )
+
+                    await text_q.put((chunk.content, confirmation_action_id))
+
+                elif chunk.type == "confirm":
+                    action_id = (chunk.metadata or {}).get("action_id")
+
+                    if not action_id:
+                        raise ValueError("Confirmation event is missing action_id")
+
+                    self._confirmation_action_id = action_id
+
+                    await self._sink.send_json(
+                        {
+                            "type": "agent_event",
+                            "event": "confirm",
+                            "content": chunk.content,
+                            "metadata": chunk.metadata,
+                        }
+                    )
+
                 elif chunk.type == "done":
                     timer.agent_timing = chunk.timing
                     break
+
                 else:
                     await self._sink.send_json(
                         {
@@ -228,7 +263,7 @@ class VoiceSession:
                 {"type": "error", "code": "stt_failed", "message": str(exc)}
             )
             with contextlib.suppress(Exception):
-                await text_q.put("ممكن تعيد كلامك تاني؟")
+                await text_q.put(("ممكن تعيد كلامك تاني؟",None))
                 await text_q.put(None)
                 await tts_task
                 await self._wait_playback_done()
@@ -239,7 +274,7 @@ class VoiceSession:
                 {"type": "error", "code": "agent_failed", "message": str(exc)}
             )
             with contextlib.suppress(Exception):
-                await text_q.put("آسف، حصلت مشكلة")
+                await text_q.put(("آسف، حصلت مشكلة",None))
                 await text_q.put(None)
                 await tts_task
                 await self._wait_playback_done()
@@ -253,19 +288,27 @@ class VoiceSession:
             if not cancelled_by_barge_in:
                 await self._set_state("listening")
 
-    async def _tts_worker(self, text_q: asyncio.Queue[str | None], timer: TurnTimer) -> None:
+    async def _tts_worker(self, text_q: asyncio.Queue[tuple[str, str | None] | None], timer: TurnTimer) -> None:
         first_chunk_of_turn = True
         first_audio_of_turn = True
 
         while True:
-            text = await text_q.get()
-            if text is None:
+            item = await text_q.get()
+
+            if item is None:
                 break
+
+            text, confirmation_action_id = item
 
             chunk_id = self._next_chunk_id
             self._next_chunk_id += 1
             self._chunk_texts[chunk_id] = text
             self._sent_order.append(chunk_id)
+
+            if confirmation_action_id:
+                self._confirmation_chunks.setdefault(
+                    confirmation_action_id, set()
+                ).add(chunk_id)
 
             voice = self._voice
             announced_rate = self._tts.sample_rate
