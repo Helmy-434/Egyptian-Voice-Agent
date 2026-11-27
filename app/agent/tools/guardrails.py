@@ -27,16 +27,13 @@ def validate_email_address(email: str) -> bool:
 
 
 def validate_email_recipient(email: str) -> bool:
+    """Validate a customer's email address.
 
-    if not validate_email_address(email):
-        return False
+    Authorization and customer confirmation must be handled
+    separately by the agent's action workflow.
+    """
 
-    allowed = get_settings().support_email_allowlist
-
-    if not allowed:
-        return False
-
-    return email.strip().lower() in allowed
+    return validate_email_address(email)
 
 
 def validate_email_content(subject: str, content: str) -> bool:
@@ -61,9 +58,22 @@ def validate_email_content(subject: str, content: str) -> bool:
 
 
 def validate_send_permission(*, confirmed: bool, send_count: int) -> None:
-    """Raise PermissionError unless to send is confirmed and within limits."""
-    if not confirmed:
-        raise PermissionError("Email sending requires explicit confirmation")
+    """Reject sending without confirmation or beyond the session limit."""
 
-    if send_count >= get_settings().max_user_sends_per_session:
-        raise PermissionError("Email send limit reached for this session")
+    if not confirmed:
+        raise PermissionError(
+            "Email sending requires explicit confirmation"
+        )
+
+    if not isinstance(send_count, int) or isinstance(send_count, bool):
+        raise ValueError("Invalid email send count")
+
+    if send_count < 0:
+        raise ValueError("Email send count cannot be negative")
+
+    settings = get_settings()
+
+    if send_count >= settings.max_user_sends_per_session:
+        raise PermissionError(
+            "Email send limit reached for this session"
+        )
