@@ -83,6 +83,8 @@ class VoiceSession:
 
     def _reset_turn_playback_state(self) -> None:
         self._sent_order.clear()
+        self._acked.clear()
+        self._chunk_texts.clear()
         self._all_acked.clear()
         self._worker_done = False
         self._audio_seconds_sent = 0.0
