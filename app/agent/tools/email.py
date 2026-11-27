@@ -1,6 +1,8 @@
 import smtplib
 from email.message import EmailMessage
-
+from langchain_core.tools import tool
+from langchain_core.runnables import RunnableConfig
+from app.agent.state import set_pending_action
 from app.configs import get_settings
 from app.agent.tools.guardrails import validate_email_content, validate_email_recipient, validate_send_permission, validate_email_address
 from app.agent.state import (
@@ -129,4 +131,66 @@ def execute_pending_email(*, session_id: str, action_id: str, readback_fully_pla
         **result,
         "action_id": action_id,
         "status": "sent",
+    }
+
+
+@tool
+def prepare_email(
+    recipient: str,
+    subject: str,
+    content: str,
+    summary: str,
+    config: RunnableConfig,
+) -> dict:
+    """Prepare an email for the customer.
+
+    Use this tool when the customer explicitly requests an email.
+    This tool does NOT send the email. It creates a pending action
+    that must be read back to the customer and explicitly confirmed.
+
+    Args:
+        recipient: Customer's email address.
+        subject: Email subject.
+        content: Complete email body.
+        summary: Concise summary of the email content for confirmation.
+    """
+    session_id = config.get("configurable", {}).get("session_id")
+
+    if not session_id:
+        raise ValueError("Missing session ID in agent configuration")
+
+    if not validate_email_recipient(recipient):
+        raise ValueError("Invalid email recipient")
+
+    if not validate_email_content(subject, content):
+        raise ValueError("Invalid email subject or content")
+
+    if not isinstance(summary, str) or not summary.strip():
+        raise ValueError("Email summary cannot be empty")
+
+    if len(summary) > 1000:
+        raise ValueError("Email summary is too long")
+
+    action = set_pending_action(
+        session_id=session_id,
+        tool="email",
+        recipient=recipient.strip(),
+        subject=subject.strip(),
+        content=content.strip(),
+        summary=summary.strip(),
+    )
+
+    return {
+        "success": True,
+        "status": "pending_confirmation",
+        "action_id": action.action_id,
+        "tool": action.tool,
+        "recipient": action.recipient,
+        "subject": action.subject,
+        "summary": action.summary,
+        "message": (
+            "Email prepared successfully. "
+            "Read its details to the customer and request confirmation. "
+            "Do not claim that the email has been sent."
+        ),
     }
