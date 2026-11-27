@@ -72,6 +72,8 @@ class SessionState(BaseModel):
     summary_offered: bool = False 
     escalated: bool = False
 
+    confirmation_playback: ConfirmationPlayback | None = None
+
     send_count: int = 0
     processed_action_ids: set[str] = Field(default_factory=set)
 
