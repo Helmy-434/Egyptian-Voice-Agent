@@ -11,7 +11,6 @@ import tempfile
 import threading
 import time
 import unicodedata
-from _thread import LockType
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -19,6 +18,7 @@ from urllib.request import Request, urlopen
 
 from app.configs import Settings
 from app.contracts import MAX_SPEAKABLE_CHARS
+from app.pipeline.net import _port_in_use
 from app.pipeline.tts.base import AudioChunk, TTSError, Voice
 
 logger = logging.getLogger(__name__)
@@ -27,6 +27,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _MODEL_ID = "voicetut-local"
 _SAMPLE_RATE = 24000
 _PCM_CHUNK_MS = 150
+_FIRST_EMIT_BYTES = _SAMPLE_RATE * 2 * 20 // 1000
 _CLOSE_TIMEOUT_SEC = 3.0
 _WARMUP_TEXT = "أهلاً بيك، إزاي أقدر أساعدك النهاردة؟"
 _END_OF_STREAM = object()
@@ -52,10 +53,8 @@ class VoiceTutTTS:
         self._server_url = f"http://127.0.0.1:{settings.voicetut_server_port}"
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="voicetut-tts")
         self._worker_busy = threading.Event()
-        self._abandoned = threading.Event()
-        self._active_calls: dict[
-            threading.Event, tuple[list[Any], LockType]
-        ] = {}
+        self._abandoned_job: threading.Event | None = None
+        self._active_calls: dict[threading.Event, tuple[list[Any], Any]] = {}
         self._active_lock = threading.Lock()
         self._closed = False
         self._ready = False
@@ -99,8 +98,9 @@ class VoiceTutTTS:
             return
         if not self._ready or self._closed:
             raise TTSError("VoiceTut-TTS is not ready; call warmup() before synthesis.")
-        if self._abandoned.is_set() and self._worker_busy.is_set():
-            raise TTSError("VoiceTut-TTS worker is still busy with an abandoned synthesis.")
+        job = self._abandoned_job
+        if job is not None and not job.is_set():
+            raise TTSError("VoiceTut-TTS worker is still finishing an abandoned synthesis.")
 
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[object] = asyncio.Queue(maxsize=1)
@@ -168,13 +168,8 @@ class VoiceTutTTS:
         finally:
             cancel.set()
             self._close_response(response_holder, response_lock)
-            if (
-                not stream_finished
-                and started.is_set()
-                and not worker_done.is_set()
-                and self._worker_busy.is_set()
-            ):
-                self._abandoned.set()
+            if not stream_finished and started.is_set() and not worker_done.is_set():
+                self._abandoned_job = worker_done
             with self._active_lock:
                 self._active_calls.pop(cancel, None)
 
@@ -255,12 +250,23 @@ class VoiceTutTTS:
             ],
         }
         config_path.write_text(json.dumps(config), encoding="utf-8")
+        port = self._settings.voicetut_server_port
+        if _port_in_use(port):
+            raise TTSError(
+                f"Port {port} is already in use (a stale audiocpp_server.exe from a previous run?). "
+                "Stop it or change the port."
+            )
         self._start_server(server_path, config_path)
         self._wait_until_ready()
 
         for speaker in (self._settings.voicetut_male_voice, self._settings.voicetut_female_voice):
-            if not any(self._read_pcm_sync(_WARMUP_TEXT, speaker, None, None, None)):
+            pcm = b"".join(self._read_pcm_sync(_WARMUP_TEXT, speaker, None, None, None))
+            if not pcm:
                 raise TTSError(f"VoiceTut-TTS warmup produced no audio for speaker {speaker!r}.")
+            seconds = len(pcm) / (2 * _SAMPLE_RATE)
+            logger.info("VoiceTut warmup speaker=%s audio=%.2fs", speaker, seconds)
+            if not 0.5 <= seconds <= 10.0:
+                logger.warning("Warmup audio duration %.2fs looks wrong; verify _SAMPLE_RATE.", seconds)
 
         self.sample_rate = _SAMPLE_RATE
         logger.info(
@@ -315,7 +321,7 @@ class VoiceTutTTS:
         speaker: str,
         cancel: threading.Event | None,
         response_holder: list[Any] | None,
-        response_lock: LockType | None,
+        response_lock: Any,
     ) -> Iterator[bytes]:
         if cancel is not None and cancel.is_set():
             return
@@ -399,7 +405,7 @@ class VoiceTutTTS:
         queue: asyncio.Queue[object],
         loop: asyncio.AbstractEventLoop,
         response_holder: list[Any],
-        response_lock: LockType,
+        response_lock: Any,
     ) -> None:
         started.set()
         self._worker_busy.set()
@@ -409,6 +415,7 @@ class VoiceTutTTS:
             pcm_buffer = bytearray()
             chunk_size = _SAMPLE_RATE * 2 * _PCM_CHUNK_MS // 1000
             audio_seen = False
+            first_sent = False
             for pcm_delta in self._read_pcm_sync(
                 text,
                 speaker,
@@ -420,6 +427,18 @@ class VoiceTutTTS:
                     break
                 pcm_buffer.extend(pcm_delta)
                 audio_seen = True
+                if not first_sent and len(pcm_buffer) >= _FIRST_EMIT_BYTES:
+                    n = len(pcm_buffer) - (len(pcm_buffer) % 2)
+                    first = bytes(pcm_buffer[:n])
+                    del pcm_buffer[:n]
+                    if not self._put_from_worker(
+                        loop,
+                        queue,
+                        AudioChunk(pcm=first, sample_rate=_SAMPLE_RATE),
+                        cancel,
+                    ):
+                        break
+                    first_sent = True
                 while len(pcm_buffer) >= chunk_size and not cancel.is_set():
                     chunk_bytes = bytes(pcm_buffer[:chunk_size])
                     del pcm_buffer[:chunk_size]
@@ -449,8 +468,6 @@ class VoiceTutTTS:
             if not cancel.is_set():
                 self._put_from_worker(loop, queue, _WorkerError(exc), cancel)
         finally:
-            if cancel.is_set():
-                self._abandoned.clear()
             self._worker_busy.clear()
             worker_done.set()
 
@@ -479,7 +496,7 @@ class VoiceTutTTS:
         return False
 
     @staticmethod
-    def _close_response(response_holder: list[Any], response_lock: LockType) -> None:
+    def _close_response(response_holder: list[Any], response_lock: Any) -> None:
         with response_lock:
             response = response_holder[0] if response_holder else None
         if response is not None:

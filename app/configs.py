@@ -11,6 +11,16 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from app.contracts import MAX_SPEAKABLE_CHARS
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_PROVIDER_URLS = {
+    "groq": "https://api.groq.com/openai/v1",
+    "openai": "https://api.openai.com/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+}
+_PROVIDER_HOSTS = {
+    "groq": "groq.com",
+    "openai": "openai.com",
+    "openrouter": "openrouter.ai",
+}
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -45,13 +55,15 @@ class Settings(BaseSettings):
     # --- LLM Configuration ---
     llm_provider: Literal["groq", "openai", "openrouter"] = "openrouter"
     llm_base_url: Optional[str] = None
-    llm_model: str = "llama-3.3-70b-versatile"
+    # Verify this slug on openrouter.ai/models before relying on it.
+    llm_model: str = "meta-llama/llama-3.3-70b-instruct"
     llm_max_output_tokens: int = 180
     llm_timeout_sec: float = 8.0
 
     # --- Secrets ---
     groq_api_key: SecretStr = SecretStr("")
     openai_api_key: SecretStr = SecretStr("")
+    openrouter_api_key: SecretStr = SecretStr("")
     azure_speech_key: SecretStr = SecretStr("")
     azure_speech_region: str = "eastus"
     gemini_api_key: SecretStr = SecretStr("")
@@ -110,6 +122,7 @@ class Settings(BaseSettings):
     @field_validator(
         "groq_api_key",
         "openai_api_key",
+        "openrouter_api_key",
         "azure_speech_key",
         "gemini_api_key",
         "gmail_app_password",
@@ -165,18 +178,17 @@ class Settings(BaseSettings):
         if not (0 < self.chunk_first_min_chars <= self.chunk_next_min_chars <= self.chunk_max_chars):
             raise ValueError("Require 0 < chunk_first_min_chars <= chunk_next_min_chars <= chunk_max_chars")
 
-        default_urls = {
-            "groq": "https://api.groq.com/openai/v1",
-            "openai": "https://api.openai.com/v1",
-        }
         if not self.llm_base_url or not self.llm_base_url.strip():
-            self.llm_base_url = default_urls[self.llm_provider]
+            self.llm_base_url = _PROVIDER_URLS[self.llm_provider]
         else:
             host = (urlparse(self.llm_base_url.strip()).hostname or "").lower()
-            if self.llm_provider == "openai" and (host == "api.groq.com" or host.endswith(".groq.com")):
-                raise ValueError("llm_provider is 'openai' but llm_base_url points to Groq")
-            if self.llm_provider == "groq" and (host == "api.openai.com" or host.endswith(".openai.com")):
-                raise ValueError("llm_provider is 'groq' but llm_base_url points to OpenAI")
+            for provider, provider_host in _PROVIDER_HOSTS.items():
+                if provider == self.llm_provider:
+                    continue
+                if host == provider_host or host.endswith("." + provider_host):
+                    raise ValueError(
+                        f"llm_provider is {self.llm_provider!r} but llm_base_url points to {provider!r}"
+                    )
 
         return self
 
@@ -184,6 +196,7 @@ class Settings(BaseSettings):
         """Called in FastAPI lifespan startup; checks secrets for active backends only."""
         groq_key = self.groq_api_key.get_secret_value()
         openai_key = self.openai_api_key.get_secret_value()
+        openrouter_key = self.openrouter_api_key.get_secret_value()
         azure_key = self.azure_speech_key.get_secret_value()
 
         if self.agent_backend == "graph":
@@ -191,6 +204,10 @@ class Settings(BaseSettings):
                 raise ValueError("GROQ_API_KEY is required when agent_backend='graph' and llm_provider='groq'")
             if self.llm_provider == "openai" and not openai_key:
                 raise ValueError("OPENAI_API_KEY is required when agent_backend='graph' and llm_provider='openai'")
+            if self.llm_provider == "openrouter" and not openrouter_key:
+                raise ValueError(
+                    "OPENROUTER_API_KEY is required when agent_backend='graph' and llm_provider='openrouter'"
+                )
 
         if self.stt_provider == "cloud":
             if self.stt_cloud_provider == "gemini" and not self.gemini_api_key.get_secret_value():

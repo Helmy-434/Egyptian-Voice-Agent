@@ -2,6 +2,8 @@
 
 Real-time Egyptian Arabic and Modern Standard Arabic (MSA) customer service voice agent (`STT -> LLM -> TTS`) supporting barge-in interruption and guarded Gmail and Telegram tool execution.
 
+The `dev/` stub agent is development-only and is not copied into the Docker image.
+
 ## Evaluation vs. Hosting Setup
 * **Latency Evaluation (`< 3s` target):** Measured locally on GPU using `QwenCleo-ASR` and `VoiceTut-TTS`.
 * **Hosted Demo:** Runs via a lightweight CPU Docker image (`requirements.txt`) with Gemini cloud STT and `DRY_RUN=true`.
@@ -91,7 +93,7 @@ arabic-voice-agent/
 │
 ├── app/
 │   ├── main.py                  # FastAPI app factory, static mount, lifespan warmup
-│   ├── config.py                # Pydantic settings, voice mappings, & tunable thresholds
+│   ├── configs.py               # Pydantic settings, voice mappings, & tunable thresholds
 │   ├── contracts.py             # Shared streaming interface (stream_agent_turn, close_session)
 │   │
 │   ├── api/
@@ -130,3 +132,17 @@ arabic-voice-agent/
 ├── tests/                       # Automated contract, guardrail, chunker, & VAD tests
 ├── scripts/                     # Latency benchmarking & STT WER evaluation scripts
 └── logs/                        # Audit & latency JSONL logs (gitignored)
+```
+
+## Running tests
+
+Run the hermetic test suite with `uv run pytest -q`; no GPU is needed.
+`uv run pytest -q -m live` runs tests that require real API keys or a GPU.
+
+The clips created by `scripts/generate_audio_files.py` are synthetic Edge-TTS
+smoke-test audio only; real WER evaluation requires real recordings.
+
+## Troubleshooting
+
+Stale `audiocpp_server.exe` processes can hold ports 18761/18762; stop them in
+Task Manager or run `taskkill /IM audiocpp_server.exe /F`.

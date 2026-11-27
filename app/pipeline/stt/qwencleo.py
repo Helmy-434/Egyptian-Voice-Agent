@@ -15,6 +15,7 @@ import wave
 
 from app.configs import Settings
 from app.pipeline.stt.base import STTError, STTResult, SampleRate
+from app.pipeline.net import _port_in_use
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +165,13 @@ class QwenCleoSTT:
             ],
         }
         config_path.write_text(json.dumps(config), encoding="utf-8")
+
+        port = self._settings.qwencleo_server_port
+        if _port_in_use(port):
+            raise STTError(
+                f"Port {port} is already in use (a stale audiocpp_server.exe from a previous run?). "
+                "Stop it or change the port."
+            )
 
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         with log_path.open("wb") as log_file:
