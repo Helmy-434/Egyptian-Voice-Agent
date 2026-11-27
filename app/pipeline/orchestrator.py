@@ -302,18 +302,29 @@ class VoiceSession:
         self._worker_done = True
         self._maybe_set_all_acked()
 
-    async def _wait_playback_done(self) -> None:
+    async def _wait_playback_done(self) -> bool:
+        """Return True only when all generated audio chunks are acknowledged."""
+
         if self._audio_seconds_sent <= 0:
-            return
+            return False
+
         timeout = self._audio_seconds_sent + self._playback_ack_timeout_pad
+
         try:
-            await asyncio.wait_for(self._all_acked.wait(), timeout=timeout)
+            await asyncio.wait_for(
+                self._all_acked.wait(),
+                timeout=timeout,
+            )
+            return True
+
         except asyncio.TimeoutError:
             logger.warning(
                 "Timed out waiting for playback acks (session=%s, timeout=%.2fs)",
                 self.session_id,
                 timeout,
             )
+            return False
+
 
     async def close(self) -> None:
         task = self._turn_task
