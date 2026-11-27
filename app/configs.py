@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     vad_speech_threshold: float = 0.5
     vad_min_speech_ms: int = 250
     vad_silence_duration_ms: int = 450
+    vad_preroll_ms: int = Field(default=300, ge=0)       # audio kept before detected speech start
+    vad_hysteresis: float = Field(default=0.15, ge=0, lt=0.5)  # "silence" = prob < threshold - hysteresis
+    max_utterance_sec: float = Field(default=20.0, gt=0) # force end of an over-long utterance
     barge_in_min_speech_ms: int = 300
     stt_min_confidence: float = 0.45
     enable_idle_offer: bool = False
