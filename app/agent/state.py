@@ -420,3 +420,88 @@ def close_session(session_id: str) -> bool:
         session = _sessions.pop(session_id, None)
 
         return session is not None
+
+
+def set_confirmation_playback(
+    session_id: str,
+    action_id: str,
+    expected_text: str,
+) -> None:
+
+    with _lock:
+        session = _sessions.get(session_id)
+
+        if session is None:
+            raise KeyError(f"Session not found: {session_id}")
+
+        action = session.pending_action
+
+        if action is None or action.action_id != action_id:
+            raise ValueError("No matching pending action")
+
+        if action.status != ActionStatus.PENDING_CONFIRMATION:
+            raise ValueError("Action is not awaiting confirmation")
+
+        if not expected_text.strip():
+            raise ValueError("Confirmation read-back cannot be empty")
+
+        session.confirmation_playback = ConfirmationPlayback(
+            action_id=action_id,
+            expected_text=expected_text,
+        )
+
+        session.updated_at = datetime.now(timezone.utc)
+
+
+def mark_confirmation_played(
+    session_id: str,
+    action_id: str,
+) -> bool:
+
+    with _lock:
+        session = _sessions.get(session_id)
+
+        if session is None:
+            raise KeyError(f"Session not found: {session_id}")
+
+        playback = session.confirmation_playback
+        action = session.pending_action
+
+        if playback is None or action is None:
+            return False
+
+        if playback.action_id != action_id:
+            return False
+
+        if action.action_id != action_id:
+            return False
+
+        if action.status != ActionStatus.PENDING_CONFIRMATION:
+            return False
+
+        playback.fully_played = True
+        session.updated_at = datetime.now(timezone.utc)
+
+        return True
+
+
+def invalidate_confirmation_playback(
+    session_id: str,
+    action_id: str,
+) -> bool:
+
+    with _lock:
+        session = _sessions.get(session_id)
+
+        if session is None:
+            return False
+
+        playback = session.confirmation_playback
+
+        if playback is None or playback.action_id != action_id:
+            return False
+
+        playback.fully_played = False
+        session.updated_at = datetime.now(timezone.utc)
+
+        return True
