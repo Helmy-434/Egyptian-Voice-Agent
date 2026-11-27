@@ -205,6 +205,7 @@ class VoiceTutTTS:
         for path in (model_path, server_path):
             if not path.is_file():
                 raise TTSError(f"Required VoiceTut/audio.cpp file was not found: {path}")
+        voice_dir = self._validate_voice_dir()
 
         try:
             import torch
@@ -239,6 +240,7 @@ class VoiceTutTTS:
             "threads": 2,
             "lazy_load": False,
             "max_loaded_models": 1,
+            "voice_dir": str(voice_dir),
             "models": [
                 {
                     "id": _MODEL_ID,
@@ -328,9 +330,10 @@ class VoiceTutTTS:
         payload = {
             "model": _MODEL_ID,
             "input": text,
+            "voice": speaker,
+            "language": "arz",
             "response_format": "pcm",
             "stream_format": "sse",
-            "options": {"voice_id": speaker},
         }
         request = Request(
             f"{self._server_url}/v1/audio/speech",
@@ -521,6 +524,43 @@ class VoiceTutTTS:
                 if self._server_temp is not None:
                     self._server_temp.cleanup()
                     self._server_temp = None
+
+    def _validate_voice_dir(self) -> Path:
+        voice_dir = self._resolve_project_path(self._settings.voicetut_voice_dir)
+        if not voice_dir.is_dir():
+            raise TTSError(f"VoiceTut reference speakers directory was not found: {voice_dir}")
+
+        available = sorted(p.stem for p in voice_dir.glob("*.wav") if p.is_file() and p.stat().st_size > 0)
+        prompt_path = voice_dir / "prompt_text"
+        if not prompt_path.is_file():
+            raise TTSError(
+                f"VoiceTut prompt_text file was not found in {voice_dir}. "
+                f"Available .wav speakers: {available}"
+            )
+
+        transcripts: dict[str, str] = {}
+        for line in prompt_path.read_text(encoding="utf-8").splitlines():
+            if "|" in line:
+                name, text = line.split("|", 1)
+                if name.strip() and text.strip():
+                    transcripts[name.strip()] = text.strip()
+
+        for role, speaker in (
+            ("male", self._settings.voicetut_male_voice),
+            ("female", self._settings.voicetut_female_voice),
+        ):
+            wav_path = voice_dir / f"{speaker}.wav"
+            if not wav_path.is_file() or wav_path.stat().st_size == 0:
+                raise TTSError(
+                    f"Configured {role} speaker {speaker!r} is missing {wav_path.name} in {voice_dir}. "
+                    f"Available speakers: {available}"
+                )
+            if speaker not in transcripts:
+                raise TTSError(
+                    f"Configured {role} speaker {speaker!r} is missing a transcript in {prompt_path}. "
+                    f"Available speakers: {available}"
+                )
+        return voice_dir
 
     def _speaker_for_voice(self, voice: Voice) -> str:
         if voice == "male":

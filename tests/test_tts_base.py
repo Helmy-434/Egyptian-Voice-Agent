@@ -46,8 +46,8 @@ def _make_settings(**overrides: object) -> Settings:
     defaults: dict[str, object] = {
         "_env_file": None,
         "tts_provider": "voicetut",
-        "voicetut_male_voice": "Mohammed",
-        "voicetut_female_voice": "Yasmin",
+        "voicetut_male_voice": "mohammed",
+        "voicetut_female_voice": "yasmin",
         "voicetut_allow_cpu": True,
         "tts_first_chunk_timeout_sec": 0.5,
         "tts_total_timeout_sec": 1.0,
@@ -114,7 +114,7 @@ def test_sse_audio_deltas_are_decoded(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(voicetut, "urlopen", fake_urlopen)
     engine = VoiceTutTTS(_make_settings())
 
-    assert list(engine._read_pcm_sync("أهلاً", "Mohammed", None, None, None)) == [pcm]
+    assert list(engine._read_pcm_sync("أهلاً", "mohammed", None, None, None)) == [pcm]
     request, timeout = calls[0]  # type: ignore[misc]
     assert timeout == 1.0
     assert request.full_url == "http://127.0.0.1:18762/v1/audio/speech"
@@ -122,9 +122,10 @@ def test_sse_audio_deltas_are_decoded(monkeypatch: pytest.MonkeyPatch) -> None:
     assert json.loads(request.data.decode("utf-8")) == {
         "model": "voicetut-local",
         "input": "أهلاً",
+        "voice": "mohammed",
+        "language": "arz",
         "response_format": "pcm",
         "stream_format": "sse",
-        "options": {"voice_id": "Mohammed"},
     }
 
 
@@ -146,10 +147,35 @@ def test_streaming_chunks_preserve_pcm_and_sample_rate(monkeypatch: pytest.Monke
         assert len(chunks) == 2
         assert len(chunks[0].pcm) <= 1024
         assert all(chunk.sample_rate == 24000 for chunk in chunks)
-        assert speakers == ["Yasmin"]
+        assert speakers == ["yasmin"]
         await engine.close()
 
     asyncio.run(_run())
+
+
+def test_warmup_raises_when_speaker_wav_or_transcript_missing(tmp_path: Path) -> None:
+    model_path = tmp_path / "voicetut.gguf"
+    server_path = tmp_path / "audiocpp_server.exe"
+    model_path.write_bytes(b"gguf")
+    server_path.write_bytes(b"exe")
+    voice_dir = tmp_path / "voices"
+    voice_dir.mkdir()
+    (voice_dir / "mohammed.wav").write_bytes(b"RIFF")
+    (voice_dir / "prompt_text").write_text("mohammed|مرحبا\n", encoding="utf-8")
+
+    engine = VoiceTutTTS(
+        _make_settings(
+            voicetut_model_path=str(model_path),
+            voicetut_server_path=str(server_path),
+            voicetut_voice_dir=str(voice_dir),
+        )
+    )
+    with pytest.raises(TTSError, match="missing yasmin.wav"):
+        asyncio.run(engine.warmup())
+
+    (voice_dir / "yasmin.wav").write_bytes(b"RIFF")
+    with pytest.raises(TTSError, match="missing a transcript"):
+        asyncio.run(engine.warmup())
 
 
 def test_server_config_uses_streaming_gguf_mode(

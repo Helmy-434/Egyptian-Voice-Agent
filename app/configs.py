@@ -113,6 +113,9 @@ class Settings(BaseSettings):
     # --- Local TTS Tuning ---
     voicetut_model_path: str = "QwenCleo/models/voicetut-tts-q8_0.gguf"
     voicetut_server_path: str = "QwenCleo/runtime/audiocpp_server.exe"
+    voicetut_voice_dir: str = "QwenCleo/voices/reference_speakers"
+    voicetut_male_voice: str = "mohammed"
+    voicetut_female_voice: str = "yasmin"
     voicetut_server_port: int = Field(default=18762, ge=1, le=65535)
     voicetut_server_startup_timeout_sec: float = Field(default=120.0, gt=0)
     voicetut_allow_cpu: bool = False
