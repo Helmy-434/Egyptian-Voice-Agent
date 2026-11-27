@@ -120,11 +120,9 @@ def execute_pending_email(*, session_id: str, action_id: str, readback_fully_pla
         )
 
     except Exception:
-        # Do not automatically retry an uncertain SMTP operation.
         mark_action_failed(session_id, action_id)
         raise
 
-    # 5. Mark successful execution.
     mark_action_sent(session_id, action_id)
 
     return {
