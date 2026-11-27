@@ -207,8 +207,17 @@ class VoiceSession:
 
             await text_q.put(None)
             await tts_task
-            await self._wait_playback_done()
+            playback_complete = await self._wait_playback_done()
+            # Store only the consecutively acknowledged assistant text.
+            # This can be a complete response or a partial response.
+            self._pending_truncated = self._truncated_text()
+            if not playback_complete:
+                logger.warning(
+                    "Assistant playback was not fully acknowledged (session=%s)",
+                    self.session_id,
+                )
             self._latency.record(timer)
+
         except asyncio.CancelledError:
             timer.cancelled = True
             cancelled_by_barge_in = True
