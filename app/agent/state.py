@@ -51,6 +51,11 @@ class Message(BaseModel):
     )
 
 
+class ConfirmationPlayback(BaseModel):
+    action_id: str
+    expected_text: str
+    played_text: str = ""
+    fully_played: bool = False
 
 class SessionState(BaseModel):
 
