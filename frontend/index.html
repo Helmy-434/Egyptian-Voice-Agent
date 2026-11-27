@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Egyptian Voice Agent</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 760px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+    h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+    .note {
+      background: #1e293b;
+      border-left: 3px solid #f59e0b;
+      padding: 0.5rem 0.75rem;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    button, select, input {
+      padding: 0.45rem 0.75rem;
+      border-radius: 6px;
+      border: 1px solid #334155;
+      background: #1e293b;
+      color: #e2e8f0;
+      font-size: 0.95rem;
+    }
+    button { cursor: pointer; background: #2563eb; border-color: #2563eb; }
+    button.stop { background: #dc2626; border-color: #dc2626; }
+    .pill {
+      padding: 0.3rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      background: #334155;
+    }
+    .pill.listening { background: #166534; }
+    .pill.hearing { background: #0284c7; }
+    .pill.thinking { background: #b45309; }
+    .pill.speaking { background: #7e22ce; }
+    .error-banner {
+      display: none;
+      background: #7f1d1d;
+      color: #fecaca;
+      padding: 0.6rem 0.85rem;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+    }
+    .panel {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      margin-bottom: 1rem;
+      min-height: 140px;
+      max-height: 320px;
+      overflow-y: auto;
+    }
+    .msg { margin: 0.4rem 0; line-height: 1.4; }
+    .msg.user { color: #38bdf8; }
+    .msg.agent { color: #a7f3d0; }
+    .event-item { font-size: 0.85rem; color: #cbd5e1; margin: 0.25rem 0; }
+  </style>
+</head>
+<body>
+  <h1>Egyptian Voice Agent</h1>
+  <div class="note">Use headphones. Echo can trigger false barge-in.</div>
+  <div id="errorBanner" class="error-banner"></div>
+
+  <div class="controls">
+    <button id="toggleBtn">Start</button>
+    <label>
+      Voice:
+      <select id="voiceSelect">
+        <option value="female" selected>female</option>
+        <option value="male">male</option>
+      </select>
+    </label>
+    <input id="emailInput" type="email" placeholder="Optional email" />
+    <span id="statusPill" class="pill">idle</span>
+  </div>
+
+  <h3>Conversation</h3>
+  <div id="chatLog" class="panel"></div>
+
+  <h3>Agent Events</h3>
+  <div id="eventsLog" class="panel" style="min-height: 80px; max-height: 180px;"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
