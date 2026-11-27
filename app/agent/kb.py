@@ -3,8 +3,10 @@ import json
 import re
 from pathlib import Path
 from typing import Any
+from pathlib import Path
 
-FAQ_PATH = Path(__name__).resolve().parent.parent / "data" / "faq_ar.json"
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+FAQ_PATH = BASE_DIR / "app" / "data" / "faq_ar.json"
 
 _DIACRITICS = re.compile(r"[ؐ-ًؚ-ٰٟـ]")
 _NON_WORD = re.compile(r"[^\w\s]")
