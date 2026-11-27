@@ -116,8 +116,8 @@ class Settings(BaseSettings):
     voicetut_server_port: int = Field(default=18762, ge=1, le=65535)
     voicetut_server_startup_timeout_sec: float = Field(default=120.0, gt=0)
     voicetut_allow_cpu: bool = False
-    tts_first_chunk_timeout_sec: float = Field(default=3.0, gt=0)
-    tts_total_timeout_sec: float = Field(default=10.0, gt=0)
+    tts_first_chunk_timeout_sec: float = Field(default=3.5, gt=0)
+    tts_total_timeout_sec: float = Field(default=5.0, gt=0)
 
     @field_validator(
         "groq_api_key",

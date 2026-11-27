@@ -142,6 +142,9 @@ Run the hermetic test suite with `uv run pytest -q`; no GPU is needed.
 The clips created by `scripts/generate_audio_files.py` are synthetic Edge-TTS
 smoke-test audio only; real WER evaluation requires real recordings.
 
+
+Run `uv run python scripts/tts_probe.py [--repeats 3] [--soak 0] [--with-stt]` to benchmark VoiceTut-TTS latency, RTF, VRAM, and soak stability.
+
 ## Troubleshooting
 
 Stale `audiocpp_server.exe` processes can hold ports 18761/18762; stop them in
