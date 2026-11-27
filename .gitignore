@@ -253,6 +253,7 @@ scripts/eval_clips/*.wav
 scripts/eval_clips/*.mp3
 scripts/eval_clips/*.flac
 scripts/eval_outputs/
+scripts/probe_out/
 
 # Model checkpoints & cache
 models/
@@ -274,5 +275,4 @@ Thumbs.db
 
 AGENTS.md
 QwenCleo
-scripts/eval_outputs/batch_manifest.json
-scripts/eval_outputs/results.json
+
