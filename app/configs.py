@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     edge_male_voice: str = "ar-EG-ShakirNeural"
     edge_female_voice: str = "ar-EG-SalmaNeural"
 
+    # --- Faster Whisper STT ---
+    faster_whisper_model: str = "base"
+    faster_whisper_device: Literal["cpu", "cuda"] = "cpu"
+    faster_whisper_compute_type: str = "int8"
+    faster_whisper_cpu_threads: int = 4
+    faster_whisper_timeout_sec: float = 30.0
+
+
     # --- Audio Transport & Session Limits (Silero VAD requires 512@16kHz or 256@8kHz = 32ms) ---
     audio_sample_rate: Literal[8000, 16000] = 16000
     audio_frame_ms: int = 32
