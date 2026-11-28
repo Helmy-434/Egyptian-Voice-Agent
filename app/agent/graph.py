@@ -5,7 +5,6 @@ from langchain_core.messages import (
     BaseMessage,
     HumanMessage,
     SystemMessage,
-    ToolMessage,
 )
 from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
@@ -309,6 +308,7 @@ async def stream_agent_turn(request: AgentRequest):
         previous_action = session_store.get_pending_action(
             session_id
         )
+        was_escalated = session_store.get_session(session_id).escalated
 
         result = await agent_graph.ainvoke(
             _graph_input(session_id, user_text),
@@ -365,22 +365,16 @@ async def stream_agent_turn(request: AgentRequest):
             )
             return
 
-        escalation_succeeded = any(
-            isinstance(message, ToolMessage)
-            and message.name == "request_escalation"
-            for message in messages
+        session_after_turn = session_store.get_session(session_id)
+        escalation_succeeded = (
+            not was_escalated
+            and session_after_turn is not None
+            and session_after_turn.escalated
         )
 
-        if escalation_succeeded:
-            yield AgentChunk(
-                type="escalate",
-                content="Human support escalation requested",
-                metadata={
-                    "session_id": session_id,
-                },
-            )
-
         answer = _get_final_answer(messages)
+        if escalation_succeeded and not answer:
+            answer = "\u0645\u062a\u0641\u0647\u0645 \u0625\u0646 \u0627\u0644\u0645\u0648\u0636\u0648\u0639 \u0645\u0636\u0627\u064a\u0642\u0643. \u062d\u0648\u0644\u062a \u0637\u0644\u0628\u0643 \u0644\u0641\u0631\u064a\u0642 \u0627\u0644\u062f\u0639\u0645\u060c \u0648\u0647\u064a\u062a\u0627\u0628\u0639 \u0645\u0639\u0627\u0643."
 
         _persist_turn(
             session_id,
@@ -394,12 +388,24 @@ async def stream_agent_turn(request: AgentRequest):
                 content=chunk,
             )
 
+        if escalation_succeeded:
+            yield AgentChunk(
+                type="escalate",
+                content="Human support escalation requested",
+                metadata={"session_id": session_id},
+            )
+
     except Exception:
         import logging
 
         logging.getLogger(__name__).exception(
             "Agent turn failed (session=%s)",
             session_id,
+        )
+
+        yield AgentChunk(
+            type="text_delta",
+            content="\u0622\u0633\u0641\u060c \u062d\u0635\u0644\u062a \u0645\u0634\u0643\u0644\u0629 \u0648\u0623\u0646\u0627 \u0628\u0639\u0627\u0644\u062c \u0637\u0644\u0628\u0643. \u0645\u0645\u0643\u0646 \u062a\u062d\u0627\u0648\u0644 \u062a\u0627\u0646\u064a\u061f",
         )
 
         yield AgentChunk(
