@@ -58,11 +58,16 @@ class CloudSTT:
             raise STTError("Gemini STT is not initialized; call warmup() at startup.")
 
         wav_audio = pcm16_to_wav_bytes(audio[:aligned_len], sample_rate)
+
+        audio_file = await self._aio_client.files.upload(
+            file=("speech.wav", wav_audio, "audio/wav"),
+        )
+
         request_input = [
             {
                 "type": "audio",
-                "data": base64.b64encode(wav_audio).decode("ascii"),
-                "mime_type": "audio/wav",
+                "uri": audio_file.uri,
+                "mime_type": audio_file.mime_type,
             }
         ]
 
