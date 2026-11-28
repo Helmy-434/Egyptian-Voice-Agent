@@ -1,0 +1,93 @@
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS audio-cpp-build
+
+ARG CUDA_ARCHITECTURES=75;80;86;89
+ENV DEBIAN_FRONTEND=noninteractive \
+    CC=/usr/bin/gcc-13 \
+    CXX=/usr/bin/g++-13 \
+    LIBRARY_PATH=/usr/local/cuda/lib64/stubs
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        software-properties-common \
+        ca-certificates \
+        git \
+        cmake \
+        build-essential \
+    && add-apt-repository -y ppa:ubuntu-toolchain-r/test \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gcc-13 g++-13 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+RUN git clone --branch v0.9.6 --depth 1 --recurse-submodules \
+    https://github.com/0xShug0/audio.cpp.git
+
+WORKDIR /src/audio.cpp
+RUN cmake -S . -B build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DGGML_CUDA=ON \
+        -DAUDIOCPP_DEPLOYMENT_BUILD=ON \
+        -DCMAKE_C_COMPILER=/usr/bin/gcc-13 \
+        -DCMAKE_CXX_COMPILER=/usr/bin/g++-13 \
+        -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-13 \
+        -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHITECTURES}" \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/usr/local/cuda/lib64/stubs" \
+        -DCMAKE_SHARED_LINKER_FLAGS="-L/usr/local/cuda/lib64/stubs" \
+    && cmake --build build --parallel 2 --target audiocpp_server
+
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    PATH=/opt/venv/bin:$PATH
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        software-properties-common \
+        ca-certificates \
+        ffmpeg \
+        libgomp1 \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python3.12 \
+        python3.12-venv \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3.12 -m venv /opt/venv \
+    && groupadd --system app \
+    && useradd --system --gid app --home-dir /app app
+
+RUN ldconfig
+
+COPY --from=audio-cpp-build /src/audio.cpp/build/bin/audiocpp_server /usr/local/bin/audiocpp_server
+COPY --from=audio-cpp-build /src/audio.cpp/build/bin/*.so* /usr/local/lib/
+RUN ldconfig
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu \
+        torch torchaudio \
+    && python -c 'import torch, torchaudio; print(f"torch=={torch.__version__}\ntorchaudio=={torchaudio.__version__}")' \
+        > /tmp/cpu-torch-constraints.txt \
+    && pip install --no-cache-dir \
+        --constraint /tmp/cpu-torch-constraints.txt \
+        -r requirements.txt \
+        "numpy>=1.26" \
+        "silero-vad>=5.1.2" \
+    && rm /tmp/cpu-torch-constraints.txt
+
+COPY app ./app
+COPY frontend ./frontend
+RUN mkdir -p /app/logs && chown -R app:app /app
+
+USER app
+
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
