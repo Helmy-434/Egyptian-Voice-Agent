@@ -1,9 +1,13 @@
 import asyncio
-import base64
 from typing import Any
-
+from google.genai import types
 from app.configs import Settings
-from app.pipeline.stt.base import STTError, STTResult, SampleRate, pcm16_to_wav_bytes
+from app.pipeline.stt.base import (
+    STTError,
+    STTResult,
+    SampleRate,
+    pcm16_to_wav_bytes,
+)
 
 _MIN_AUDIO_SEC = 0.10
 
@@ -23,13 +27,16 @@ class CloudSTT:
 
         api_key = self._settings.gemini_api_key.get_secret_value()
         if not api_key:
-            raise STTError("GEMINI_API_KEY is required when STT_PROVIDER=cloud.")
+            raise STTError(
+                "GEMINI_API_KEY is required when STT_PROVIDER=cloud."
+            )
 
         try:
             from google import genai
         except ImportError as exc:
             raise STTError(
-                "google-genai is required for cloud STT. Install requirements.txt."
+                "google-genai is required for cloud STT. "
+                "Install requirements.txt."
             ) from exc
 
         try:
@@ -38,7 +45,9 @@ class CloudSTT:
                 http_options={"api_version": "v1beta"},
             )
         except Exception as exc:
-            raise STTError(f"Failed to initialize the Gemini STT client: {exc}") from exc
+            raise STTError(
+                f"Failed to initialize the Gemini STT client: {exc}"
+            ) from exc
 
         self._client = client
         self._aio_client = client.aio
@@ -48,67 +57,102 @@ class CloudSTT:
         audio: bytes,
         sample_rate: SampleRate = 16000,
     ) -> STTResult:
-        """Transcribe one utterance using Gemini's async Interactions API."""
+        """Transcribe one utterance using Gemini's GenerateContent API."""
+
         aligned_len = len(audio) - (len(audio) % 2)
         audio_sec = aligned_len / (sample_rate * 2)
+
         if audio_sec < _MIN_AUDIO_SEC:
             return STTResult(text="", confidence=None)
 
         if self._aio_client is None:
-            raise STTError("Gemini STT is not initialized; call warmup() at startup.")
+            raise STTError(
+                "Gemini STT is not initialized; call warmup() at startup."
+            )
 
-        wav_audio = pcm16_to_wav_bytes(audio[:aligned_len], sample_rate)
-
-        audio_file = await self._aio_client.files.upload(
-            file=("speech.wav", wav_audio, "audio/wav"),
+        wav_audio = pcm16_to_wav_bytes(
+            audio[:aligned_len],
+            sample_rate,
         )
 
-        request_input = [
-            {
-                "type": "audio",
-                "uri": audio_file.uri,
-                "mime_type": audio_file.mime_type,
-            }
-        ]
-
         try:
-            interaction = await asyncio.wait_for(
-                self._aio_client.interactions.create(
+            response = await asyncio.wait_for(
+                self._aio_client.models.generate_content(
                     model=self._settings.gemini_stt_model,
-                    input=request_input,
-                    generation_config={
-                        "transcription_config": {
-                            "mode": {"type": "verbatim"},
-                        }
-                    },
+                    contents=[
+                        types.Part.from_bytes(
+                            data=wav_audio,
+                            mime_type="audio/wav",
+                        )
+                    ],
+                    config=types.GenerateContentConfig(
+                        audio_transcription_config=types.AudioTranscriptionConfig(
+                            language_codes=["ar-EG"],
+                        )
+                    ),
                 ),
                 timeout=self._settings.stt_cloud_timeout_sec,
             )
+
         except asyncio.TimeoutError as exc:
             raise STTError(
-                f"Gemini STT timed out after {self._settings.stt_cloud_timeout_sec:.2f}s "
+                f"Gemini STT timed out after "
+                f"{self._settings.stt_cloud_timeout_sec:.2f}s "
                 f"(audio={audio_sec:.2f}s)"
             ) from exc
-        except Exception as exc:
-            raise STTError(f"Gemini STT request failed: {exc}") from exc
 
-        text = getattr(interaction, "output_text", None)
-        if not isinstance(text, str):
+        except Exception as exc:
             raise STTError(
-                f"Unexpected Gemini STT response type: {type(interaction).__name__} "
-                "(expected a string output_text)"
+                f"Gemini STT request failed: {exc}"
+            ) from exc
+
+        parts = getattr(response, "parts", []) or []
+        transcript_parts: list[str] = []
+
+        for part in parts:
+            part_text = getattr(part, "text", None)
+
+            if part_text:
+                transcript_parts.append(part_text)
+                continue
+
+            audio_transcription = getattr(
+                part,
+                "audio_transcription",
+                None,
+            )
+            transcription_text = getattr(
+                audio_transcription,
+                "text",
+                None,
             )
 
-        return STTResult(text=text.strip(), confidence=None)
+            if transcription_text:
+                transcript_parts.append(transcription_text)
+
+        text = "".join(transcript_parts).strip()
+
+        if not text:
+            raise STTError(
+                "Gemini returned an empty transcription."
+            )
+
+        return STTResult(
+            text=text,
+            confidence=None,
+        )
 
     async def close(self) -> None:
         """Close the async and synchronous clients used by the Gemini SDK."""
+
         client = self._client
         aio_client = self._aio_client
+
         self._client = None
         self._aio_client = None
 
         close_errors: list[Exception] = []
+
         if aio_client is not None:
             try:
                 await aio_client.aclose()
@@ -122,4 +166,7 @@ class CloudSTT:
                 close_errors.append(exc)
 
         if close_errors:
-            raise STTError(f"Failed to close the Gemini STT client: {close_errors[0]}") from close_errors[0]
+            raise STTError(
+                f"Failed to close the Gemini STT client: "
+                f"{close_errors[0]}"
+            ) from close_errors[0]

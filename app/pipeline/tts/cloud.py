@@ -1,11 +1,7 @@
-
-
 from __future__ import annotations
-
 import asyncio
 import io
 import logging
-import struct
 import unicodedata
 from collections.abc import AsyncIterator
 from typing import Any
