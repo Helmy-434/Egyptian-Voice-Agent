@@ -60,12 +60,10 @@ class FasterWhisperSTT:
             ) from exc
 
     async def transcribe(
-        self,
-        audio: bytes,
-        sample_rate: SampleRate = 16000,
+            self,
+            audio: bytes,
+            sample_rate: SampleRate = 16000,
     ) -> STTResult:
-        """Transcribe mono little-endian PCM16 audio."""
-
         if not audio:
             return STTResult(text="", confidence=None)
 
@@ -90,11 +88,10 @@ class FasterWhisperSTT:
         self._worker_busy.set()
 
         try:
-            # Convert PCM16 bytes to normalized float32 waveform.
             waveform = (
-                np.frombuffer(audio, dtype=np.int16)
-                .astype(np.float32)
-                / 32768.0
+                    np.frombuffer(audio, dtype=np.int16)
+                    .astype(np.float32)
+                    / 32768.0
             )
 
             loop = asyncio.get_running_loop()
@@ -105,19 +102,19 @@ class FasterWhisperSTT:
                 waveform,
             )
 
-            text = await asyncio.wait_for(
-                future,
-                timeout=self._settings.faster_whisper_timeout_sec,
-            )
+            try:
+                text = await asyncio.wait_for(
+                    asyncio.shield(future),
+                    timeout=self._settings.faster_whisper_timeout_sec,
+                )
+            except asyncio.TimeoutError as exc:
+                raise STTError(
+                    f"Faster-Whisper timed out after "
+                    f"{self._settings.faster_whisper_timeout_sec:.2f}s "
+                    f"(audio={audio_sec:.2f}s)"
+                ) from exc
 
             return STTResult(text=text, confidence=None)
-
-        except asyncio.TimeoutError as exc:
-            raise STTError(
-                "Faster-Whisper timed out after "
-                f"{self._settings.faster_whisper_timeout_sec:.2f}s "
-                f"(audio={audio_sec:.2f}s)"
-            ) from exc
 
         except STTError:
             raise
@@ -128,8 +125,8 @@ class FasterWhisperSTT:
             ) from exc
 
         finally:
-            # The inference may still be running after asyncio timeout
-            # or cancellation. Clear busy only when the worker finishes.
+            # Do not clear the flag here.
+            # The inference may still be running after timeout/cancellation.
             pass
 
     def _load_model_sync(self) -> None:
