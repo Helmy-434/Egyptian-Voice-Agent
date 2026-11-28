@@ -311,7 +311,11 @@ class VoiceSession:
             if not cancelled_by_barge_in:
                 await self._set_state("listening")
 
-    async def _tts_worker(self, text_q: asyncio.Queue[tuple[str, str | None] | None], timer: TurnTimer) -> None:
+    async def _tts_worker(
+            self,
+            text_q: asyncio.Queue[tuple[str, str | None] | None],
+            timer: TurnTimer,
+    ) -> None:
         first_chunk_of_turn = True
         first_audio_of_turn = True
 
@@ -335,6 +339,7 @@ class VoiceSession:
 
             voice = self._voice
             announced_rate = self._tts.sample_rate
+
             await self._sink.send_json(
                 {
                     "type": "tts_chunk_start",
@@ -343,60 +348,61 @@ class VoiceSession:
                     "sample_rate": announced_rate,
                 }
             )
+
             if first_chunk_of_turn:
                 first_chunk_of_turn = False
                 await self._set_state("speaking")
 
-        synthesis_succeeded = False
+            synthesis_succeeded = False
 
-        for attempt in range(2):
-            try:
-                async for audio in self._tts.synthesize_stream(text, voice):
-                    if audio.sample_rate != announced_rate:
-                        raise TTSError(
-                            f"TTS sample rate mismatch: "
-                            f"expected {announced_rate}, "
-                            f"received {audio.sample_rate}"
+            for attempt in range(2):
+                try:
+                    async for audio in self._tts.synthesize_stream(text, voice):
+                        if audio.sample_rate != announced_rate:
+                            raise TTSError(
+                                f"TTS sample rate mismatch: "
+                                f"expected {announced_rate}, "
+                                f"received {audio.sample_rate}"
+                            )
+
+                        if first_audio_of_turn:
+                            first_audio_of_turn = False
+                            timer.mark("tts_first_audio")
+
+                        await self._sink.send_bytes(audio.pcm)
+
+                        self._audio_seconds_sent += (
+                                len(audio.pcm) / (2 * audio.sample_rate)
                         )
 
-                    if first_audio_of_turn:
-                        first_audio_of_turn = False
-                        timer.mark("tts_first_audio")
+                    synthesis_succeeded = True
+                    break
 
-                    await self._sink.send_bytes(audio.pcm)
+                except TTSError as exc:
+                    if attempt == 0:
+                        await asyncio.sleep(0.3)
+                        continue
 
-                    self._audio_seconds_sent += (
-                            len(audio.pcm) / (2 * audio.sample_rate)
+                    logger.exception("TTS synthesis failed")
+
+                    await self._sink.send_json(
+                        {
+                            "type": "error",
+                            "code": "tts_failed",
+                            "message": str(exc),
+                        }
                     )
 
-                synthesis_succeeded = True
-                break
-
-            except TTSError as exc:
-                if attempt == 0:
-                    await asyncio.sleep(0.3)
-                    continue
-
-                logger.exception("TTS synthesis failed")
-
-                await self._sink.send_json(
-                    {
-                        "type": "error",
-                        "code": "tts_failed",
-                        "message": str(exc),
-                    }
+            if not synthesis_succeeded:
+                logger.error(
+                    "Skipping failed TTS chunk (session=%s, chunk=%s)",
+                    self.session_id,
+                    chunk_id,
                 )
 
-        if not synthesis_succeeded:
-            logger.error(
-                "Skipping failed TTS chunk (session=%s, chunk=%s)",
-                self.session_id,
-                chunk_id,
+            await self._sink.send_json(
+                {"type": "tts_chunk_end", "chunk_id": chunk_id}
             )
-
-        await self._sink.send_json(
-            {"type": "tts_chunk_end", "chunk_id": chunk_id}
-        )
 
         self._worker_done = True
         self._maybe_set_all_acked()

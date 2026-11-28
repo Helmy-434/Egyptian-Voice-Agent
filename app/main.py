@@ -135,3 +135,6 @@ def create_app(
         app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
 
     return app
+
+
+app = create_app()
