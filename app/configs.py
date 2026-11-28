@@ -33,7 +33,7 @@ class Settings(BaseSettings):
 
     # --- Runtime Mode & Providers ---
     agent_backend: Literal["stub", "graph"] = "graph"
-    stt_provider: Literal["qwencleo", "cloud"] = "qwencleo"
+    stt_provider: Literal["qwencleo", "cloud","faster_whisper"] = "qwencleo"
     stt_cloud_provider: Literal["gemini"] = "gemini"
     tts_provider: Literal["voicetut", "cloud"] = "voicetut"
     tts_cloud_provider: Literal["azure", "edge"] = "edge"
