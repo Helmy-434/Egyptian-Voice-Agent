@@ -406,3 +406,7 @@ async def stream_agent_turn(request: AgentRequest):
             type="done",
             content="",
         )
+
+
+def close_session(session_id: str) -> None:
+    session_store.close_session(session_id)
