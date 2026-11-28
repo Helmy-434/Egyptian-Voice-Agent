@@ -266,7 +266,9 @@ class VoiceSession:
             async for chunk in agen:
 
                 if chunk.type == "text_delta":
-                    action_id = chunk.confirmation_action_id
+                    action_id = (chunk.metadata or {}).get(
+                        "confirmation_action_id"
+                    )
 
                     if action_id:
                         confirmation_action_id = action_id

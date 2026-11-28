@@ -342,6 +342,9 @@ async def stream_agent_turn(request: AgentRequest):
                 yield AgentChunk(
                     type="text_delta",
                     content=chunk,
+                    metadata={
+                        "confirmation_action_id": current_action.action_id,
+                    },
                 )
 
             yield AgentChunk(
