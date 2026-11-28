@@ -48,35 +48,46 @@ class _EdgeTTSDriver:
         self._edge_tts = edge_tts
         self.sample_rate = _EDGE_SAMPLE_RATE
 
-    async def synthesize_stream(self, text: str, voice: Voice) -> AsyncIterator[AudioChunk]:
+    async def synthesize_stream(
+            self, text: str, voice: Voice
+    ) -> AsyncIterator[AudioChunk]:
         if self._edge_tts is None:
-            raise TTSError("Edge TTS is not initialized; call warmup() at startup.")
+            raise TTSError(
+                "Edge TTS is not initialized; call warmup() at startup."
+            )
+
         speaker = self._speaker_for_voice(voice)
         communicate = self._edge_tts.Communicate(text, speaker)
-        pcm_buffer = bytearray()
-        chunk_bytes = _PCM_CHUNK_SAMPLES * 2
+
+        mp3_buffer = bytearray()
 
         async for event in communicate.stream():
             if event["type"] == "audio":
                 raw = event["data"]
-                if not raw:
-                    continue
-                pcm = await asyncio.to_thread(_mp3_to_pcm16, raw, _EDGE_SAMPLE_RATE)
-                if pcm:
-                    pcm_buffer.extend(pcm)
-                    while len(pcm_buffer) >= chunk_bytes:
-                        yield AudioChunk(
-                            pcm=bytes(pcm_buffer[:chunk_bytes]),
-                            sample_rate=_EDGE_SAMPLE_RATE,
-                        )
-                        del pcm_buffer[:chunk_bytes]
+                if raw:
+                    mp3_buffer.extend(raw)
 
-        # Flush remainder
-        if pcm_buffer:
-            aligned = len(pcm_buffer) - (len(pcm_buffer) % 2)
-            if aligned > 0:
+        if not mp3_buffer:
+            return
+
+        # Decode the complete MP3 once instead of decoding every fragment.
+        pcm = await asyncio.to_thread(
+            _mp3_to_pcm16,
+            bytes(mp3_buffer),
+            _EDGE_SAMPLE_RATE,
+        )
+
+        chunk_bytes = _PCM_CHUNK_SAMPLES * 2
+
+        for offset in range(0, len(pcm), chunk_bytes):
+            chunk = pcm[offset:offset + chunk_bytes]
+
+            if len(chunk) % 2:
+                chunk = chunk[:-1]
+
+            if chunk:
                 yield AudioChunk(
-                    pcm=bytes(pcm_buffer[:aligned]),
+                    pcm=chunk,
                     sample_rate=_EDGE_SAMPLE_RATE,
                 )
 
