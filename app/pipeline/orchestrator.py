@@ -1,4 +1,5 @@
 import asyncio
+from app.agent.chunker import chunk_text , SENTENCE_BOUNDARY
 import contextlib
 import logging
 from typing import AsyncGenerator, Callable, Literal, Protocol
@@ -162,6 +163,23 @@ class VoiceSession:
             tuple[str, str | None] | None
         ] = asyncio.Queue()
 
+        text_buffer = ""
+        buffer_action_id: str | None = None
+
+        async def flush_text_buffer() -> None:
+            nonlocal text_buffer, buffer_action_id
+
+            if not text_buffer.strip():
+                text_buffer = ""
+                buffer_action_id = None
+                return
+
+            for text_part in chunk_text(text_buffer):
+                await text_q.put((text_part, buffer_action_id))
+
+            text_buffer = ""
+            buffer_action_id = None
+
         tts_task = asyncio.create_task(
             self._tts_worker(text_q, timer)
         )
@@ -208,27 +226,28 @@ class VoiceSession:
 
             async for chunk in agen:
                 if chunk.type == "text_delta":
-                    timer.mark("agent_first_chunk")
+                    action_id = chunk.confirmation_action_id
 
-                    confirmation_action_id = None
+                    # Don't mix normal speech with confirmation read-back.
+                    if text_buffer and action_id != buffer_action_id:
+                        await flush_text_buffer()
 
-                    if chunk.metadata:
-                        confirmation_action_id = (
-                            chunk.metadata.get(
-                                "confirmation_action_id"
-                            )
-                        )
+                    if not text_buffer:
+                        buffer_action_id = action_id
 
-                    await self._sink.send_json(
-                        {
-                            "type": "agent_text",
-                            "text": chunk.content,
-                        }
-                    )
+                    text_buffer += chunk.content
 
-                    await text_q.put(
-                        (chunk.content, confirmation_action_id)
-                    )
+                    # Flush complete sentences as soon as possible.
+                    sentences = SENTENCE_BOUNDARY.split(text_buffer)
+
+                    if len(sentences) > 1:
+                        complete_text = " ".join(sentences[:-1])
+                        text_buffer = sentences[-1]
+
+                        for text_part in chunk_text(complete_text):
+                            await text_q.put((text_part, buffer_action_id))
+
+                    continue
 
                 elif chunk.type == "confirm":
                     action_id = (
@@ -252,6 +271,7 @@ class VoiceSession:
                     )
 
                 elif chunk.type == "done":
+                    await flush_text_buffer()
                     timer.agent_timing = chunk.timing
                     break
 
