@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=ENV_FILE_PATH, extra="ignore")
 
     # --- Runtime Mode & Providers ---
-    agent_backend: Literal["stub", "graph"] = "stub"
+    agent_backend: Literal["stub", "graph"] = "graph"
     stt_provider: Literal["qwencleo", "cloud"] = "qwencleo"
     stt_cloud_provider: Literal["gemini"] = "gemini"
     tts_provider: Literal["voicetut", "cloud"] = "voicetut"

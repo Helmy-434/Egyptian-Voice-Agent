@@ -148,7 +148,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Benchmark voice loop latency")
     parser.add_argument("--turns", type=int, default=30)
     parser.add_argument("--clips-dir", type=Path, default=PROJECT_ROOT / "scripts" / "eval_clips")
-    parser.add_argument("--agent", type=str, default="stub")
+    parser.add_argument("--agent", type=str, default="graph")
     args = parser.parse_args()
     asyncio.run(run_benchmark(args.turns, args.clips_dir, args.agent))
 
