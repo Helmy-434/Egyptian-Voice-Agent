@@ -66,8 +66,10 @@ def pcm16_to_wav_bytes(audio: bytes, sample_rate: SampleRate = 16000) -> bytes:
     return buf.getvalue()
 
 
+
 def create_stt_engine(settings: Settings) -> STTEngine:
-    """Lazy factory so cloud deployments never import torch or start audio.cpp."""
+    """Lazy factory for the configured STT provider."""
+
     if settings.stt_provider == "qwencleo":
         from app.pipeline.stt.qwencleo import QwenCleoSTT
 
@@ -77,5 +79,10 @@ def create_stt_engine(settings: Settings) -> STTEngine:
         from app.pipeline.stt.cloud import CloudSTT
 
         return CloudSTT(settings)
+
+    if settings.stt_provider == "faster_whisper":
+        from app.pipeline.stt.faster_whisper import FasterWhisperSTT
+
+        return FasterWhisperSTT(settings)
 
     raise ValueError(f"Unsupported stt_provider: {settings.stt_provider!r}")
