@@ -26,14 +26,9 @@ WORKDIR /src/audio.cpp
 RUN cmake -S . -B build \
         -DCMAKE_BUILD_TYPE=Release \
         -DGGML_CUDA=ON \
+        -DCMAKE_CUDA_ARCHITECTURES=89 \
         -DAUDIOCPP_DEPLOYMENT_BUILD=ON \
-        -DCMAKE_C_COMPILER=/usr/bin/gcc-13 \
-        -DCMAKE_CXX_COMPILER=/usr/bin/g++-13 \
-        -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-13 \
-        -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHITECTURES}" \
-        -DCMAKE_EXE_LINKER_FLAGS="-L/usr/local/cuda/lib64/stubs" \
-        -DCMAKE_SHARED_LINKER_FLAGS="-L/usr/local/cuda/lib64/stubs" \
-    && cmake --build build --parallel 2 --target audiocpp_server
+    && cmake --build build --config Release --parallel 4
 
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
 
@@ -43,6 +38,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    LD_LIBRARY_PATH=/usr/local/lib \
     PATH=/opt/venv/bin:$PATH
 
 WORKDIR /app
@@ -67,6 +63,8 @@ RUN ldconfig
 
 COPY --from=audio-cpp-build /src/audio.cpp/build/bin/audiocpp_server /usr/local/bin/audiocpp_server
 COPY --from=audio-cpp-build /src/audio.cpp/build/bin/*.so* /usr/local/lib/
+COPY --from=audio-cpp-build /usr/lib/x86_64-linux-gnu/libstdc++.so.6* /usr/local/lib/
+COPY --from=audio-cpp-build /lib/x86_64-linux-gnu/libgcc_s.so.1 /usr/local/lib/
 RUN ldconfig
 
 COPY requirements.txt .
