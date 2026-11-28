@@ -300,6 +300,12 @@ async def stream_agent_turn(request: AgentRequest):
             )
             return
 
+        # Create the session on its first request.
+        session = session_store.get_session(session_id)
+        if session is None:
+            email = request.context.user_email if request.context else None
+            session_store.create_session(session_id, email)
+
         previous_action = session_store.get_pending_action(
             session_id
         )
