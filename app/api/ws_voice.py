@@ -3,7 +3,7 @@ import contextlib
 import json
 import logging
 from uuid import uuid4
-
+from app.agent.state import mark_confirmation_played
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.pipeline.orchestrator import ClientSink, VoiceSession
@@ -98,27 +98,48 @@ async def ws_voice(websocket: WebSocket) -> None:
         try:
             while True:
                 msg = await websocket.receive()
+
                 if msg.get("type") == "websocket.disconnect":
                     break
+
                 if "bytes" in msg and msg["bytes"] is not None:
                     await session.feed_audio(msg["bytes"])
+
                 elif "text" in msg and msg["text"] is not None:
                     try:
                         data = json.loads(msg["text"])
                     except ValueError:
-                        logger.debug("Malformed JSON from client: %r", msg["text"])
+                        logger.debug(
+                            "Malformed JSON from client: %r",
+                            msg["text"],
+                        )
                         continue
+
                     if isinstance(data, dict):
                         if data.get("type") == "stop":
                             break
-                        await session.handle_message(data)
+
+                        elif data.get("type") == "playback_complete":
+                            action_id = data.get("action_id")
+
+                            if action_id:
+                                played = mark_confirmation_played(
+                                    session_id,
+                                    action_id,
+                                )
+
+                                logger.info(
+                                    "Confirmation playback acknowledgement: "
+                                    "session=%s action=%s played=%s",
+                                    session_id,
+                                    action_id,
+                                    played,
+                                )
+
+                        else:
+                            await session.handle_message(data)
+
         except WebSocketDisconnect:
             pass
         finally:
             watchdog_task.cancel()
-            await asyncio.gather(watchdog_task, return_exceptions=True)
-            await session.close()
-            with contextlib.suppress(Exception):
-                await state.close_session_fn(session_id)
-            with contextlib.suppress(Exception):
-                await websocket.close()
