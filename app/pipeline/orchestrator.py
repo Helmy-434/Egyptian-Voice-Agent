@@ -1,9 +1,12 @@
 import asyncio
-from app.agent.chunker import chunk_text , SENTENCE_BOUNDARY
 import contextlib
 import logging
 from typing import AsyncGenerator, Callable, Literal, Protocol
-from app.agent.state import mark_confirmation_played
+from app.agent.chunker import chunk_text, SENTENCE_BOUNDARY
+from app.agent.state import (
+    set_confirmation_playback,
+    invalidate_confirmation_playback,
+)
 from app.configs import Settings
 from app.contracts import AgentChunk, AgentRequest, SessionContext
 from app.pipeline.latency import LatencyTracker, TurnTimer
@@ -141,6 +144,14 @@ class VoiceSession:
                 self._voice = voice
 
     async def _barge_in(self) -> None:
+        action_id = self._confirmation_action_id
+
+        if action_id:
+            invalidate_confirmation_playback(
+                self.session_id,
+                action_id,
+            )
+
         task = self._turn_task
 
         if task is not None and not task.done():
@@ -166,6 +177,9 @@ class VoiceSession:
         text_buffer = ""
         buffer_action_id: str | None = None
 
+        confirmation_text = ""
+        confirmation_action_id: str | None = None
+
         async def flush_text_buffer() -> None:
             nonlocal text_buffer, buffer_action_id
 
@@ -179,6 +193,31 @@ class VoiceSession:
 
             text_buffer = ""
             buffer_action_id = None
+
+        async def add_text_delta(
+            content: str,
+            action_id: str | None,
+        ) -> None:
+            nonlocal text_buffer, buffer_action_id
+
+            # Never combine normal speech with confirmation speech.
+            if text_buffer and action_id != buffer_action_id:
+                await flush_text_buffer()
+
+            if not text_buffer:
+                buffer_action_id = action_id
+
+            text_buffer += content
+
+            # Send complete sentences without waiting for the full response.
+            sentences = SENTENCE_BOUNDARY.split(text_buffer)
+
+            if len(sentences) > 1:
+                complete_text = " ".join(sentences[:-1])
+                text_buffer = sentences[-1]
+
+                for text_part in chunk_text(complete_text):
+                    await text_q.put((text_part, buffer_action_id))
 
         tts_task = asyncio.create_task(
             self._tts_worker(text_q, timer)
@@ -225,39 +264,47 @@ class VoiceSession:
             agen = self._stream_turn(request)
 
             async for chunk in agen:
+
                 if chunk.type == "text_delta":
                     action_id = chunk.confirmation_action_id
 
-                    # Don't mix normal speech with confirmation read-back.
-                    if text_buffer and action_id != buffer_action_id:
-                        await flush_text_buffer()
+                    if action_id:
+                        confirmation_action_id = action_id
+                        confirmation_text += chunk.content
 
-                    if not text_buffer:
-                        buffer_action_id = action_id
-
-                    text_buffer += chunk.content
-
-                    # Flush complete sentences as soon as possible.
-                    sentences = SENTENCE_BOUNDARY.split(text_buffer)
-
-                    if len(sentences) > 1:
-                        complete_text = " ".join(sentences[:-1])
-                        text_buffer = sentences[-1]
-
-                        for text_part in chunk_text(complete_text):
-                            await text_q.put((text_part, buffer_action_id))
-
-                    continue
+                    await add_text_delta(
+                        chunk.content,
+                        action_id,
+                    )
 
                 elif chunk.type == "confirm":
-                    action_id = (
-                        chunk.metadata or {}
-                    ).get("action_id")
+                    action_id = (chunk.metadata or {}).get("action_id")
 
                     if not action_id:
                         raise ValueError(
                             "Confirmation event is missing action_id"
                         )
+
+                    if confirmation_action_id != action_id:
+                        raise ValueError(
+                            "Confirmation action ID does not match "
+                            "the read-back text"
+                        )
+
+                    if not confirmation_text.strip():
+                        raise ValueError(
+                            "Confirmation read-back text is empty"
+                        )
+
+                    # Queue all remaining confirmation text first.
+                    await flush_text_buffer()
+
+                    # Register the exact text that must be played.
+                    set_confirmation_playback(
+                        self.session_id,
+                        action_id,
+                        confirmation_text,
+                    )
 
                     self._confirmation_action_id = action_id
 
@@ -289,16 +336,6 @@ class VoiceSession:
             await text_q.put(None)
             await tts_task
 
-            # Temporary simplification:
-            # Mark confirmation read-back after TTS sends its audio.
-            action_id = self._confirmation_action_id
-
-            if action_id:
-                mark_confirmation_played(
-                    self.session_id,
-                    action_id,
-                )
-
             self._latency.record(timer)
 
         except asyncio.CancelledError:
@@ -318,19 +355,14 @@ class VoiceSession:
             )
 
             with contextlib.suppress(Exception):
-                await text_q.put(
-                    ("ممكن تعيد كلامك تاني؟", None)
-                )
+                await text_q.put(("ممكن تعيد كلامك تاني؟", None))
                 await text_q.put(None)
                 await tts_task
 
         except Exception as exc:
             timer.cancelled = True
 
-            logger.exception(
-                "Agent turn failed: %s",
-                exc,
-            )
+            logger.exception("Agent turn failed: %s", exc)
 
             await self._sink.send_json(
                 {
@@ -375,7 +407,7 @@ class VoiceSession:
             if item is None:
                 break
 
-            text, _ = item
+            text, action_id = item
 
             chunk_id = self._next_chunk_id
             self._next_chunk_id += 1
@@ -387,6 +419,7 @@ class VoiceSession:
                 {
                     "type": "tts_chunk_start",
                     "chunk_id": chunk_id,
+                    "action_id": action_id,
                     "text": text,
                     "sample_rate": announced_rate,
                 }
@@ -435,6 +468,15 @@ class VoiceSession:
                         }
                     )
 
+            await self._sink.send_json(
+                {
+                    "type": "tts_chunk_end",
+                    "chunk_id": chunk_id,
+                    "action_id": action_id,
+                    "success": synthesis_succeeded,
+                }
+            )
+
             if not synthesis_succeeded:
                 logger.error(
                     "Skipping failed TTS chunk "
@@ -443,21 +485,19 @@ class VoiceSession:
                     chunk_id,
                 )
 
-            await self._sink.send_json(
-                {
-                    "type": "tts_chunk_end",
-                    "chunk_id": chunk_id,
-                }
+    async def close(self) -> None:
+        action_id = self._confirmation_action_id
+
+        if action_id:
+            invalidate_confirmation_playback(
+                self.session_id,
+                action_id,
             )
 
-    async def close(self) -> None:
         task = self._turn_task
 
         if task is not None and not task.done():
             task.cancel()
-            await asyncio.gather(
-                task,
-                return_exceptions=True,
-            )
+            await asyncio.gather(task, return_exceptions=True)
 
         self._turn_task = None
