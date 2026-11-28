@@ -19,6 +19,9 @@
   let activeSources = [];
   let currentChunk = null;
   let flushedGeneration = 0;
+  // Keep a small playback cushion so network / TTS packet jitter does not
+  // create gaps between PCM buffers (which sound like clipped syllables).
+  const PLAYBACK_BUFFER_SEC = 0.2;
 
   function showError(msg) {
     errorBanner.textContent = msg;
@@ -112,10 +115,10 @@
     src.buffer = buf;
     src.connect(audioCtx.destination);
 
-    const startAt = Math.max(
-      audioCtx.currentTime + 0.02,
-      nextTime
-    );
+    const now = audioCtx.currentTime;
+    const startAt = nextTime > now
+      ? nextTime
+      : now + PLAYBACK_BUFFER_SEC;
 
     nextTime = startAt + buf.duration;
 

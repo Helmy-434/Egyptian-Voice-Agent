@@ -1,7 +1,7 @@
 import re
 from app.contracts import MAX_SPEAKABLE_CHARS
 
-SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?؟。])\s+")
+SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?؟。])(?:\s+|(?=\S))")
 
 
 def _split_long_word(word: str, max_chars: int) -> list[str]:

@@ -33,6 +33,17 @@ AGENT_TOOLS = [
 ]
 
 
+def _explicitly_requests_email(text: str) -> bool:
+    normalized = " ".join(text.casefold().split())
+    phrases = (
+        "email", "e-mail", "البريد الإلكتروني", "الايميل", "الإيميل",
+        "ابعتلي ايميل", "ابعتلي إيميل", "ابعت ايميل", "ابعت إيميل",
+        "ابعتلي على البريد", "ابعثلي ايميل", "ابعثلي إيميل",
+        "ارسل ايميل", "أرسل إيميل", "ابعث ايميل", "ابعث إيميل",
+    )
+    return any(phrase in normalized for phrase in phrases)
+
+
 class AgentGraphState(TypedDict):
     session_id: str
     user_text: str
@@ -105,15 +116,22 @@ def generate_response(
     config: RunnableConfig,
 ) -> dict:
 
-    llm = get_llm().bind_tools(AGENT_TOOLS)
+    session = session_store.get_session(state["session_id"])
+    already_escalated = session is not None and session.escalated
+    available_tools = [] if already_escalated else [request_escalation]
+    if _explicitly_requests_email(state["user_text"]):
+        available_tools.append(prepare_email)
+    llm = get_llm().bind_tools(available_tools)
 
     prompt = (
         f"{SYSTEM_PROMPT}\n\n"
         f"FAQ KNOWLEDGE:\n{state['faq_context']}\n\n"
 
         "EMAIL RULES:\n"
-        "- If the customer explicitly requests an email, "
-        "use prepare_email.\n"
+        "- The email tool is available only after a clear email request. "
+        "Never prepare an email for an unclear or unrelated utterance.\n"
+        "- Use only an email address the customer provided in this session; "
+        "never invent a recipient.\n"
         "- Preparing an email does not mean it was sent.\n"
         "- Never claim an email was sent before the backend "
         "confirms execution.\n"
@@ -124,7 +142,14 @@ def generate_response(
         "use request_escalation.\n"
         "- Escalate when the issue requires human intervention "
         "or cannot be reliably resolved.\n"
-        "- Never claim support was notified unless the tool succeeds.\n\n"
+        + (
+            "- This session has already been escalated. Do not repeat the "
+            "handoff message or claim another alert was sent; continue "
+            "helping with the customer's latest request.\n"
+            if already_escalated
+            else ""
+        )
+        + "- Never claim support was notified unless the tool succeeds.\n\n"
 
         "GENERAL RULES:\n"
         "- Use the FAQ information when answering customer questions.\n"
@@ -227,6 +252,35 @@ def _make_email_readback(action) -> str:
     )
 
 
+def _is_no_confirmation(text: str) -> bool:
+    normalized = " ".join(text.casefold().strip().split())
+    return normalized in {"لا", "لأ", "لأه", "مش موافق", "مش عايز", "الغاء", "إلغاء", "cancel", "no", "no thanks"}
+
+
+def _is_summary_request(text: str) -> bool:
+    normalized = " ".join(text.casefold().split())
+    phrases = (
+        "summary", "summarize", "recap", "\u0645\u0644\u062e\u0635",
+        "\u0644\u062e\u0635 \u0627\u0644\u0645\u062d\u0627\u062f\u062b\u0629",
+        "\u0639\u0627\u064a\u0632 \u0645\u0644\u062e\u0635",
+        "\u0639\u0627\u0648\u0632 \u0645\u0644\u062e\u0635",
+    )
+    return any(phrase in normalized for phrase in phrases)
+
+
+def _make_conversation_summary(session_id: str) -> str:
+    history = session_store.get_messages(session_id)
+    user_turns = [
+        message.content.strip()
+        for message in history
+        if message.role == "user" and message.content.strip()
+    ][-5:]
+    if not user_turns:
+        return "\u0644\u0633\u0647 \u0645\u0641\u064a\u0634 \u0645\u062d\u0627\u062f\u062b\u0629 \u0643\u0641\u0627\u064a\u0629 \u0644\u062a\u0644\u062e\u064a\u0635\u0647\u0627."
+    details = "\u060c ".join(user_turns)
+    return f"\u0645\u0644\u062e\u0635 \u0627\u0644\u0645\u062d\u0627\u062f\u062b\u0629: {details}"
+
+
 def _persist_turn(session_id: str, user_text: str, assistant_text: str) -> None:
     """save messages of user & assistant"""
     session_store.add_message(
@@ -309,6 +363,26 @@ async def stream_agent_turn(request: AgentRequest):
             session_id
         )
         was_escalated = session_store.get_session(session_id).escalated
+
+        if (
+            previous_action is not None
+            and previous_action.status == session_store.ActionStatus.PENDING_CONFIRMATION
+            and _is_no_confirmation(user_text)
+        ):
+            session_store.cancel_pending_action(session_id, previous_action.action_id)
+            reply = "\u062a\u0645\u0627\u0645\u060c \u0644\u0646 \u0623\u0631\u0633\u0644 \u0627\u0644\u0631\u0633\u0627\u0644\u0629. \u062a\u0642\u062f\u0631 \u062a\u0643\u0645\u0644 \u0633\u0624\u0627\u0644\u0643."
+            _persist_turn(session_id, user_text, reply)
+            yield AgentChunk(type="text_delta", content=reply)
+            yield AgentChunk(type="done", content="")
+            return
+
+        if _is_summary_request(user_text):
+            reply = _make_conversation_summary(session_id)
+            _persist_turn(session_id, user_text, reply)
+            for chunk in _split_speech(reply):
+                yield AgentChunk(type="text_delta", content=chunk)
+            yield AgentChunk(type="done", content="")
+            return
 
         result = await agent_graph.ainvoke(
             _graph_input(session_id, user_text),

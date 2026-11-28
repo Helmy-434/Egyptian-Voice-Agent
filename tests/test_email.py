@@ -73,6 +73,34 @@ def test_prepare_email_success(monkeypatch, tool_config):
     set_action.assert_called_once()
 
 
+def test_prepare_email_reuses_matching_pending_action(monkeypatch, tool_config):
+    existing = SimpleNamespace(
+        action_id="action-123",
+        tool="email",
+        recipient="customer@example.com",
+        subject="Support Follow-up",
+        content="Your issue has been resolved.",
+        summary="A follow-up about your resolved issue.",
+    )
+    set_action = Mock()
+
+    monkeypatch.setattr(email_tools, "get_pending_action", lambda session_id: existing)
+    monkeypatch.setattr(email_tools, "set_pending_action", set_action)
+
+    result = email_tools.prepare_email.invoke(
+        {
+            "recipient": "customer@example.com",
+            "subject": "Support Follow-up",
+            "content": "Your issue has been resolved.",
+            "summary": "A follow-up about your resolved issue.",
+        },
+        config=tool_config,
+    )
+
+    assert result["action_id"] == "action-123"
+    set_action.assert_not_called()
+
+
 def test_prepare_email_missing_session():
     with pytest.raises(ValueError, match="Missing session ID"):
         email_tools.prepare_email.invoke(

@@ -171,14 +171,35 @@ def prepare_email(
     if len(summary) > 1000:
         raise ValueError("Email summary is too long")
 
-    action = set_pending_action(
-        session_id=session_id,
-        tool="email",
-        recipient=recipient.strip(),
-        subject=subject.strip(),
-        content=content.strip(),
-        summary=summary.strip(),
-    )
+    recipient = recipient.strip()
+    subject = subject.strip()
+    content = content.strip()
+    summary = summary.strip()
+
+    try:
+        existing = get_pending_action(session_id)
+    except KeyError:
+        existing = None
+    if existing is not None:
+        same_action = (
+            existing.tool == "email"
+            and existing.recipient == recipient
+            and existing.subject == subject
+            and existing.content == content
+            and existing.summary == summary
+        )
+        if not same_action:
+            raise ValueError("An active pending action already exists")
+        action = existing
+    else:
+        action = set_pending_action(
+            session_id=session_id,
+            tool="email",
+            recipient=recipient,
+            subject=subject,
+            content=content,
+            summary=summary,
+        )
 
     return {
         "success": True,

@@ -74,6 +74,9 @@ class VoiceSession:
         self._turn_task: asyncio.Task[None] | None = None
         self._first_turn: bool = True
         self._pending_truncated: str | None = None
+        self._chunk_text: dict[int, str] = {}
+        self._played_chunk_ids: set[int] = set()
+        self._played_text: list[str] = []
 
         self._next_chunk_id: int = 0
 
@@ -91,6 +94,9 @@ class VoiceSession:
 
     def _reset_turn_playback_state(self) -> None:
         self._confirmation_action_id = None
+        self._chunk_text = {}
+        self._played_chunk_ids = set()
+        self._played_text = []
 
     async def feed_audio(self, data: bytes) -> None:
         self._rx_buf.extend(data)
@@ -142,6 +148,13 @@ class VoiceSession:
 
             if voice in ("male", "female"):
                 self._voice = voice
+        elif msg.get("type") == "played":
+            chunk_id = msg.get("chunk_id")
+            if isinstance(chunk_id, int) and chunk_id not in self._played_chunk_ids:
+                text = self._chunk_text.get(chunk_id)
+                if text is not None:
+                    self._played_chunk_ids.add(chunk_id)
+                    self._played_text.append(text)
 
     async def _barge_in(self) -> None:
         action_id = self._confirmation_action_id
@@ -153,15 +166,15 @@ class VoiceSession:
             )
 
         task = self._turn_task
+        played_text = "".join(self._played_text)
+        self._pending_truncated = played_text if played_text else ""
+        await self._sink.send_json({"type": "barge_in"})
 
         if task is not None and not task.done():
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
 
-            await self._sink.send_json({"type": "barge_in"})
-
-            self._pending_truncated = None
-            self._reset_turn_playback_state()
+        self._reset_turn_playback_state()
 
     async def _run_turn(
         self,
@@ -199,6 +212,8 @@ class VoiceSession:
             action_id: str | None,
         ) -> None:
             nonlocal text_buffer, buffer_action_id
+
+            timer.mark("agent_first_chunk")
 
             # Never combine normal speech with confirmation speech.
             if text_buffer and action_id != buffer_action_id:
@@ -273,6 +288,13 @@ class VoiceSession:
                     if action_id:
                         confirmation_action_id = action_id
                         confirmation_text += chunk.content
+
+                    await self._sink.send_json(
+                        {
+                            "type": "agent_text",
+                            "text": chunk.content,
+                        }
+                    )
 
                     await add_text_delta(
                         chunk.content,
@@ -426,6 +448,7 @@ class VoiceSession:
                     "sample_rate": announced_rate,
                 }
             )
+            self._chunk_text[chunk_id] = text
 
             if first_chunk_of_turn:
                 first_chunk_of_turn = False
