@@ -2,7 +2,7 @@ import asyncio
 import contextlib
 import logging
 from typing import AsyncGenerator, Callable, Literal, Protocol
-
+from app.agent.state import mark_confirmation_played
 from app.configs import Settings
 from app.contracts import AgentChunk, AgentRequest, SessionContext
 from app.pipeline.latency import LatencyTracker, TurnTimer
@@ -243,9 +243,32 @@ class VoiceSession:
             await text_q.put(None)
             await tts_task
             playback_complete = await self._wait_playback_done()
-            # Store only the consecutively acknowledged assistant text.
-            # This can be a complete response or a partial response.
+
             self._pending_truncated = self._truncated_text()
+
+            # Mark the email read-back as played only when every chunk
+            # belonging to that confirmation has been acknowledged.
+            action_id = self._confirmation_action_id
+
+            if playback_complete and action_id:
+                confirmation_chunk_ids = self._confirmation_chunks.get(
+                    action_id, set()
+                )
+
+                confirmation_fully_played = (
+                        bool(confirmation_chunk_ids)
+                        and confirmation_chunk_ids.issubset(self._acked)
+                )
+
+                if confirmation_fully_played:
+                    mark_confirmation_played(
+                        self.session_id,
+                        action_id,
+                    )
+                    logger.info(
+                        "Email confirmation read-back fully played (session=%s)",
+                        self.session_id,
+                    )
             if not playback_complete:
                 logger.warning(
                     "Assistant playback was not fully acknowledged (session=%s)",
@@ -324,37 +347,56 @@ class VoiceSession:
                 first_chunk_of_turn = False
                 await self._set_state("speaking")
 
-            for attempt in range(2):
-                try:
-                    async for audio in self._tts.synthesize_stream(text, voice):
-                        if audio.sample_rate != announced_rate:
-                            logger.error(
-                                "TTS sample_rate mismatch: announced %s, got %s",
-                                announced_rate,
-                                audio.sample_rate,
-                            )
-                            break
-                        if first_audio_of_turn:
-                            first_audio_of_turn = False
-                            timer.mark("tts_first_audio")
-                        await self._sink.send_bytes(audio.pcm)
-                        self._audio_seconds_sent += len(audio.pcm) / (2 * audio.sample_rate)
-                    break
+        synthesis_succeeded = False
 
-                except TTSError as exc:
-                    if attempt == 0:
-                        await asyncio.sleep(0.3)
-                        continue
+        for attempt in range(2):
+            try:
+                async for audio in self._tts.synthesize_stream(text, voice):
+                    if audio.sample_rate != announced_rate:
+                        raise TTSError(
+                            f"TTS sample rate mismatch: "
+                            f"expected {announced_rate}, "
+                            f"received {audio.sample_rate}"
+                        )
 
-                    await self._sink.send_json(
-                        {
-                            "type": "error",
-                            "code": "tts_failed",
-                            "message": str(exc),
-                        }
+                    if first_audio_of_turn:
+                        first_audio_of_turn = False
+                        timer.mark("tts_first_audio")
+
+                    await self._sink.send_bytes(audio.pcm)
+
+                    self._audio_seconds_sent += (
+                            len(audio.pcm) / (2 * audio.sample_rate)
                     )
 
-            await self._sink.send_json({"type": "tts_chunk_end", "chunk_id": chunk_id})
+                synthesis_succeeded = True
+                break
+
+            except TTSError as exc:
+                if attempt == 0:
+                    await asyncio.sleep(0.3)
+                    continue
+
+                logger.exception("TTS synthesis failed")
+
+                await self._sink.send_json(
+                    {
+                        "type": "error",
+                        "code": "tts_failed",
+                        "message": str(exc),
+                    }
+                )
+
+        if not synthesis_succeeded:
+            logger.error(
+                "Skipping failed TTS chunk (session=%s, chunk=%s)",
+                self.session_id,
+                chunk_id,
+            )
+
+        await self._sink.send_json(
+            {"type": "tts_chunk_end", "chunk_id": chunk_id}
+        )
 
         self._worker_done = True
         self._maybe_set_all_acked()
