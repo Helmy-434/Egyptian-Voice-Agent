@@ -82,6 +82,7 @@ def create_stt_engine(settings: Settings) -> STTEngine:
 
     if settings.stt_provider == "faster_whisper":
         from app.pipeline.stt.faster_whisper import FasterWhisperSTT
+        return FasterWhisperSTT(settings)
 
         return FasterWhisperSTT(settings)
 
