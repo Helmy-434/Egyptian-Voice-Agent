@@ -18,7 +18,7 @@ from urllib.request import Request, urlopen
 
 from app.configs import Settings
 from app.contracts import MAX_SPEAKABLE_CHARS
-from app.pipeline.net import _port_in_use
+from app.pipeline.net import _port_in_use, has_cuda_driver
 from app.pipeline.tts.base import AudioChunk, TTSError, Voice
 
 logger = logging.getLogger(__name__)
@@ -207,15 +207,7 @@ class VoiceTutTTS:
                 raise TTSError(f"Required VoiceTut/audio.cpp file was not found: {path}")
         voice_dir = self._validate_voice_dir()
 
-        try:
-            import torch
-        except ImportError as exc:
-            raise TTSError(
-                "torch is required to select the audio.cpp backend for local VoiceTut-TTS. "
-                "Install a compatible PyTorch build or switch TTS_PROVIDER=cloud."
-            ) from exc
-
-        if torch.cuda.is_available():
+        if has_cuda_driver():
             backend = "cuda"
             self.device = "cuda:0"
         elif self._settings.voicetut_allow_cpu:
@@ -224,7 +216,8 @@ class VoiceTutTTS:
             logger.warning("CUDA unavailable; running VoiceTut-TTS on CPU (VOICETUT_ALLOW_CPU=true).")
         else:
             raise TTSError(
-                "CUDA is unavailable for VoiceTut-TTS. Set VOICETUT_ALLOW_CPU=true to override "
+                "The NVIDIA CUDA driver is unavailable for VoiceTut-TTS. "
+                "Set VOICETUT_ALLOW_CPU=true to override "
                 "or switch TTS_PROVIDER=cloud."
             )
 
@@ -255,7 +248,7 @@ class VoiceTutTTS:
         port = self._settings.voicetut_server_port
         if _port_in_use(port):
             raise TTSError(
-                f"Port {port} is already in use (a stale audiocpp_server.exe from a previous run?). "
+                f"Port {port} is already in use (a stale audiocpp_server process?). "
                 "Stop it or change the port."
             )
         self._start_server(server_path, config_path)

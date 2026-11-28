@@ -2,6 +2,7 @@ from functools import lru_cache
 import json
 from pathlib import Path
 import re
+import sys
 from typing import Annotated, Literal, Optional
 from urllib.parse import urlparse
 
@@ -25,6 +26,9 @@ _PROVIDER_HOSTS = {
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ENV_FILE_PATH = PROJECT_ROOT / ".env"
+_AUDIOCPP_SERVER_NAME = (
+    "audiocpp_server.exe" if sys.platform == "win32" else "audiocpp_server"
+)
 
 
 class Settings(BaseSettings):
@@ -112,7 +116,7 @@ class Settings(BaseSettings):
     
     # --- Local STT Tuning ---
     qwencleo_model_path: str = "QwenCleo/models/qwencleo-asr-q8_0.gguf"
-    qwencleo_server_path: str = "QwenCleo/runtime/audiocpp_server.exe"
+    qwencleo_server_path: str = f"QwenCleo/runtime/{_AUDIOCPP_SERVER_NAME}"
     qwencleo_server_port: int = Field(default=18761, ge=1, le=65535)
     qwencleo_server_startup_timeout_sec: float = Field(default=120.0, gt=0)
     qwencleo_allow_cpu: bool = False
@@ -124,7 +128,7 @@ class Settings(BaseSettings):
 
     # --- Local TTS Tuning ---
     voicetut_model_path: str = "QwenCleo/models/voicetut-tts-q8_0.gguf"
-    voicetut_server_path: str = "QwenCleo/runtime/audiocpp_server.exe"
+    voicetut_server_path: str = f"QwenCleo/runtime/{_AUDIOCPP_SERVER_NAME}"
     voicetut_voice_dir: str = "QwenCleo/voices/reference_speakers"
     voicetut_male_voice: str = "mohammed"
     voicetut_female_voice: str = "yasmin"

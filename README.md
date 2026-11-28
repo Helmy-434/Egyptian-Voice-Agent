@@ -454,6 +454,7 @@ arabic-voice-agent/
 ├── requirements.txt
 ├── requirements-gpu.txt
 ├── Dockerfile
+├── Dockerfile.gpu
 ├── docker-compose.yml
 ├── README.md
 │
@@ -951,68 +952,43 @@ They are useful for checking whether the transcription pipeline works, but real 
 
 ## Docker and Hosted Deployment
 
-The project supports a lightweight hosted deployment using Docker.
+The default Docker image is for cloud providers and does not include CUDA, PyTorch, or local model weights. The GPU image builds a Linux CUDA-enabled audio.cpp server for local QwenCleo/VoiceTut inference. Both run Uvicorn with one worker.
 
-The hosted configuration is designed to avoid bundling large local GPU models and native runtime binaries.
+### Cloud Quick Start
 
-### Hosted Demo Configuration
-
-The hosted demo uses:
-
-- CPU Docker image.
-- Cloud Gemini STT.
-- `DRY_RUN=true`.
-- A configured LLM provider.
-- A configured TTS provider.
-
-For hosted STT, configure:
-
-```env
-STT_PROVIDER=cloud
-GEMINI_API_KEY=your_gemini_api_key
-```
-
-The Gemini model defaults to:
-
-```env
-GEMINI_STT_MODEL=gemini-3.5-transcribe
-```
-
-You can adjust the model and timeout:
-
-```env
-STT_CLOUD_TIMEOUT_SEC=15.0
-```
-
-Cloud usage depends on the selected model's availability, API quotas, and provider rate limits.
-
-### Build the Docker Image
+Set `OPENROUTER_API_KEY` and `GEMINI_API_KEY` in `.env`, then run:
 
 ```bash
-docker compose build
+docker compose up --build
 ```
 
-### Start the Application
+This uses cloud STT/TTS providers and energy-based VAD by default. It builds with the lightweight root `Dockerfile` and does not require NVIDIA Container Toolkit.
+
+### Local GPU Quick Start
+
+On Windows, use Docker Desktop with the WSL2 backend and NVIDIA GPU support enabled. Ensure both GGUF models and the reference-speaker WAVs are present under `QwenCleo/`; model downloads are described in [Local QwenCleo Setup](#local-qwencleo-setup). Set `OPENROUTER_API_KEY` in `.env` for the graph agent, then run:
 
 ```bash
-docker compose up -d
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 ```
 
-### View Logs
+The GPU overlay selects `Dockerfile.gpu`. Ensure both GGUF models and the reference-speaker WAVs are present under `QwenCleo/`; they are mounted at runtime and are not baked into the image.
+
+Check `http://localhost:8000/health`; both `stt.device` and `tts.device` should report `cuda:0`. To directly test the NVIDIA driver from the app container:
 
 ```bash
-docker compose logs -f
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml exec voice-agent python -c "from app.pipeline.net import has_cuda_driver; print(has_cuda_driver())"
 ```
 
-### Stop the Application
+The app reads secrets from `.env`; Compose does not bake that file into the image. Logs are persisted in `./logs`. The GPU container exposes port 8000 and runs with one worker because session state is in-process. PyTorch is CPU-only for Silero VAD; CUDA detection and model inference use the NVIDIA driver and audio.cpp, so `torch.cuda.is_available()` is expected to be false.
 
-```bash
-docker compose down
-```
+### Image Size
 
-The development-only `dev/` stub agent is not copied into the Docker image.
+The cloud image excludes CUDA and PyTorch; its exact size depends on dependency updates and has not been measured. The GPU image includes the CUDA runtime, Linux audio.cpp server, Python 3.12, and CPU PyTorch; expect a **multi-GB image** (roughly **2–4 GB**, not measured). The local QwenCleo-ASR and VoiceTut-TTS GGUF models are about **3.83 GB (3.56 GiB) combined** (2.48 GB ASR + 1.35 GB TTS); they are mounted from the host, not copied into either image. The host needs enough disk space for both.
 
-Local model files and native GPU runtimes are intentionally excluded from the hosted image.
+Run in the background with the same two Compose files plus `-d`; view logs with `docker compose -f docker-compose.yml -f docker-compose.gpu.yml logs -f`, and stop with the corresponding `down` command. The current RTX 4060 has 8 GB VRAM; both model processes load at startup, so actual VRAM headroom depends on runtime allocations.
+
+The development-only `dev/` stub agent and local model files/native runtimes are intentionally excluded from the image.
 
 ---
 
@@ -1061,7 +1037,7 @@ Ensure the CUDA runtime DLLs are beside:
 audiocpp_server.exe
 ```
 
-**Platform note:** These are Windows binaries. They are not directly executable as native Linux programs. A Linux installation requires a compatible Linux audio.cpp build and corresponding runtime libraries.
+**Platform note:** audio.cpp supports Linux, but these downloaded archives are Windows binaries. The Docker GPU setup above builds a Linux CUDA server.
 
 ### 3. Configure the Provider
 

@@ -8,7 +8,6 @@ from collections.abc import AsyncIterator
 import io
 import json
 from pathlib import Path
-import sys
 import threading
 from types import SimpleNamespace
 
@@ -200,11 +199,7 @@ def test_server_config_uses_streaming_gguf_mode(
             return self.returncode
 
     process = FakeProcess()
-    monkeypatch.setitem(
-        sys.modules,
-        "torch",
-        SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: True)),
-    )
+    monkeypatch.setattr(voicetut, "has_cuda_driver", lambda: True)
     monkeypatch.setattr(
         voicetut.subprocess,
         "Popen",
@@ -294,8 +289,7 @@ def test_abandoned_worker_fails_fast_then_recovers(monkeypatch: pytest.MonkeyPat
 )
 @pytest.mark.live
 def test_voicetut_local_gpu_integration() -> None:
-    torch = pytest.importorskip("torch", reason="PyTorch is required for local GPU integration")
-    if not torch.cuda.is_available():
+    if not voicetut.has_cuda_driver():
         pytest.skip("CUDA is unavailable for local GPU integration")
 
     async def _run() -> None:

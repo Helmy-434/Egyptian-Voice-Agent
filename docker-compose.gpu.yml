@@ -1,0 +1,26 @@
+services:
+  voice-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    environment:
+      STT_PROVIDER: qwencleo
+      TTS_PROVIDER: voicetut
+      VAD_PROVIDER: silero
+      QWENCLEO_MODEL_PATH: /app/QwenCleo/models/qwencleo-asr-q8_0.gguf
+      QWENCLEO_SERVER_PATH: /usr/local/bin/audiocpp_server
+      QWENCLEO_ALLOW_CPU: "false"
+      VOICETUT_MODEL_PATH: /app/QwenCleo/models/voicetut-tts-q8_0.gguf
+      VOICETUT_SERVER_PATH: /usr/local/bin/audiocpp_server
+      VOICETUT_VOICE_DIR: /app/QwenCleo/voices/reference_speakers
+      VOICETUT_ALLOW_CPU: "false"
+    volumes:
+      - ./QwenCleo/models:/app/QwenCleo/models:ro
+      - ./QwenCleo/voices/reference_speakers:/app/QwenCleo/voices/reference_speakers:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

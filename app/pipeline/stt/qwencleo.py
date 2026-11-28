@@ -15,7 +15,7 @@ import wave
 
 from app.configs import Settings
 from app.pipeline.stt.base import STTError, STTResult, SampleRate
-from app.pipeline.net import _port_in_use
+from app.pipeline.net import _port_in_use, has_cuda_driver
 
 logger = logging.getLogger(__name__)
 
@@ -121,15 +121,7 @@ class QwenCleoSTT:
             if not path.is_file():
                 raise STTError(f"Required local QwenCleo file was not found: {path}")
 
-        try:
-            import torch
-        except ImportError as exc:
-            raise STTError(
-                "torch is required to detect CUDA for STT_PROVIDER=qwencleo. "
-                "Install requirements-gpu.txt or switch to STT_PROVIDER=cloud."
-            ) from exc
-
-        if torch.cuda.is_available():
+        if has_cuda_driver():
             backend = "cuda"
             self.device = "cuda:0"
         elif self._settings.qwencleo_allow_cpu:
@@ -138,7 +130,8 @@ class QwenCleoSTT:
             logger.warning("CUDA unavailable; running local QwenCleo-ASR on CPU (QWENCLEO_ALLOW_CPU=true)")
         else:
             raise STTError(
-                "CUDA is unavailable for QwenCleo-ASR. Set QWENCLEO_ALLOW_CPU=true to override "
+                "The NVIDIA CUDA driver is unavailable for QwenCleo-ASR. "
+                "Set QWENCLEO_ALLOW_CPU=true to override "
                 "or switch STT_PROVIDER=cloud."
             )
 
@@ -169,7 +162,7 @@ class QwenCleoSTT:
         port = self._settings.qwencleo_server_port
         if _port_in_use(port):
             raise STTError(
-                f"Port {port} is already in use (a stale audiocpp_server.exe from a previous run?). "
+                f"Port {port} is already in use (a stale audiocpp_server process?). "
                 "Stop it or change the port."
             )
 

@@ -1,3 +1,6 @@
+from pathlib import Path
+import sys
+
 import pytest
 from pydantic import ValidationError
 
@@ -9,6 +12,16 @@ def test_settings_default_to_openrouter() -> None:
 
     assert settings.llm_provider == "openrouter"
     assert settings.llm_base_url == "https://openrouter.ai/api/v1"
+
+
+def test_local_server_defaults_use_platform_binary_name() -> None:
+    settings = Settings(_env_file=None)
+    expected_name = (
+        "audiocpp_server.exe" if sys.platform == "win32" else "audiocpp_server"
+    )
+
+    assert Path(settings.qwencleo_server_path).name == expected_name
+    assert Path(settings.voicetut_server_path).name == expected_name
 
 
 def test_provider_rejects_another_providers_base_url() -> None:
